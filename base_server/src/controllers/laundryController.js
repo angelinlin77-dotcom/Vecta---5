@@ -1,6 +1,8 @@
 const m = require('../models/laundryModel');
 
 const STATUS = ['Diterima', 'Dicuci', 'Disetrika', 'Siap Diambil', 'Selesai'];
+const STATUS_BAYAR = ['Belum Bayar', 'DP', 'Lunas'];
+const METODE_BAYAR = ['Tunai', 'Transfer', 'QRIS'];
 
 class HttpError extends Error {
   constructor(code, message, error) { super(message); this.code = code; this.error = error; }
@@ -78,9 +80,29 @@ const pesananBody = async (b) => {
   if (!(await m.findById('pelanggan', pelanggan_id))) throw bad('pelanggan_id tidak ditemukan');
   const lay = await m.findById('layanan', layanan_id);
   if (!lay) throw bad('layanan_id tidak ditemukan');
+
+  const total_harga = Math.round(berat_kg * lay.harga_per_kg);
+
+  // Pembayaran
+  const status_bayar = b.status_bayar ?? 'Belum Bayar';
+  if (!STATUS_BAYAR.includes(status_bayar)) throw bad(`status_bayar harus salah satu dari: ${STATUS_BAYAR.join(', ')}`);
+
+  let metode_bayar = '';
+  let jumlah_dibayar = 0;
+  if (status_bayar !== 'Belum Bayar') {
+    metode_bayar = text(b.metode_bayar, 'metode_bayar');
+    if (!METODE_BAYAR.includes(metode_bayar)) throw bad(`metode_bayar harus salah satu dari: ${METODE_BAYAR.join(', ')}`);
+  }
+  if (status_bayar === 'Lunas') jumlah_dibayar = total_harga;
+  if (status_bayar === 'DP') {
+    jumlah_dibayar = num(b.jumlah_dibayar, 'jumlah_dibayar', { min: 0, gt: true, int: true });
+    if (jumlah_dibayar >= total_harga) throw bad('jumlah DP harus kurang dari total harga');
+  }
+
   return {
     pelanggan_id, layanan_id, berat_kg, status,
-    total_harga: Math.round(berat_kg * lay.harga_per_kg),
+    total_harga,
+    status_bayar, metode_bayar, jumlah_dibayar,
     tanggal_masuk: text(b.tanggal_masuk, 'tanggal_masuk', false) || new Date().toISOString().slice(0, 10),
     catatan: text(b.catatan, 'catatan', false),
   };

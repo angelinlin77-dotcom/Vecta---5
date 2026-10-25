@@ -1,6 +1,6 @@
 import { FormEvent, ReactNode, useCallback, useEffect, useState } from 'react';
 import { api, rupiah } from './api';
-import { Dashboard, Layanan, Pelanggan, Pesanan, STATUS, Status } from './types';
+import { Dashboard, Layanan, Pelanggan, Pesanan, STATUS, Status, STATUS_BAYAR, METODE_BAYAR, StatusBayar } from './types';
 
 function useData<T>(path: string) {
   const [data, setData] = useState<T | null>(null);
@@ -27,9 +27,10 @@ function DashboardCards({ version }: { version: number }) {
   return (
     <section className="cards">
       <div className="card"><span>Total pesanan</span><b>{data.total_pesanan}</b></div>
-      <div className="card"><span>Total pendapatan</span><b>{rupiah(data.total_pendapatan)}</b></div>
+      <div className="card"><span>Total transaksi</span><b>{rupiah(data.total_transaksi ?? 0)}</b></div>
+      <div className="card"><span>Pendapatan (sudah dibayar)</span><b>{rupiah(data.total_pendapatan ?? 0)}</b></div>
       {STATUS.map((s) => (
-        <div className="card" key={s}><span>{s}</span><b>{data.per_status[s]}</b></div>
+        <div className="card" key={s}><span>{s}</span><b>{data.per_status[s] ?? 0}</b></div>
       ))}
     </section>
   );
@@ -38,7 +39,7 @@ function DashboardCards({ version }: { version: number }) {
 interface Field { key: string; label: string; type: 'text' | 'number'; required?: boolean }
 interface Column<T> { label: string; render: (row: T) => ReactNode }
 
-function CrudPage<T extends { id: number }>(props: {
+function CrudPage<T extends { id: number; nama: string }>(props: {
   title: string;
   path: string;
   fields: Field[];
@@ -47,6 +48,7 @@ function CrudPage<T extends { id: number }>(props: {
 }) {
   const { title, path, fields, columns, onChange } = props;
   const { data, error, loading, reload } = useData<T[]>(path);
+  const sorted = [...(data ?? [])].sort((a, b) => a.nama.localeCompare(b.nama, 'id'));
   const [form, setForm] = useState<Record<string, string>>({});
   const [editId, setEditId] = useState<number | null>(null);
   const [msg, setMsg] = useState('');
@@ -116,7 +118,7 @@ function CrudPage<T extends { id: number }>(props: {
             <tr>{columns.map((c) => <th key={c.label}>{c.label}</th>)}<th>Aksi</th></tr>
           </thead>
           <tbody>
-            {data?.map((row) => (
+            {sorted.map((row) => (
               <tr key={row.id}>
                 {columns.map((c) => <td key={c.label}>{c.render(row)}</td>)}
                 <td className="actions">
@@ -133,8 +135,14 @@ function CrudPage<T extends { id: number }>(props: {
   );
 }
 
-interface PesananForm { pelanggan_id: string; layanan_id: string; berat_kg: string; catatan: string }
-const emptyPesanan: PesananForm = { pelanggan_id: '', layanan_id: '', berat_kg: '', catatan: '' };
+interface PesananForm {
+  pelanggan_id: string; layanan_id: string; berat_kg: string; catatan: string;
+  status_bayar: StatusBayar; metode_bayar: string; jumlah_dibayar: string;
+}
+const emptyPesanan: PesananForm = {
+  pelanggan_id: '', layanan_id: '', berat_kg: '', catatan: '',
+  status_bayar: 'Belum Bayar', metode_bayar: '', jumlah_dibayar: '',
+};
 
 function PesananPage({ onChange }: { onChange: () => void }) {
   const [status, setStatus] = useState('');
@@ -144,7 +152,8 @@ function PesananPage({ onChange }: { onChange: () => void }) {
   if (q) params.set('q', q);
   const query = params.toString();
   const { data, error, loading, reload } = useData<Pesanan[]>(`/pesanan${query ? `?${query}` : ''}`);
-  const pelanggan = useData<Pelanggan[]>('/pelanggan').data ?? [];
+  const pelanggan = [...(useData<Pelanggan[]>('/pelanggan').data ?? [])]
+    .sort((a, b) => a.nama.localeCompare(b.nama, 'id'));
   const layanan = useData<Layanan[]>('/layanan').data ?? [];
   const [form, setForm] = useState<PesananForm>(emptyPesanan);
   const [editId, setEditId] = useState<number | null>(null);
@@ -164,6 +173,9 @@ function PesananPage({ onChange }: { onChange: () => void }) {
       layanan_id: Number(form.layanan_id),
       berat_kg: Number(form.berat_kg),
       catatan: form.catatan,
+      status_bayar: form.status_bayar,
+      metode_bayar: form.status_bayar === 'Belum Bayar' ? '' : form.metode_bayar,
+      jumlah_dibayar: form.status_bayar === 'DP' ? Number(form.jumlah_dibayar) : 0,
     };
     try {
       if (editId === null) await api.post('/pesanan', body);
@@ -191,6 +203,9 @@ function PesananPage({ onChange }: { onChange: () => void }) {
       layanan_id: String(p.layanan_id),
       berat_kg: String(p.berat_kg),
       catatan: p.catatan,
+      status_bayar: p.status_bayar ?? 'Belum Bayar',
+      metode_bayar: p.metode_bayar ?? '',
+      jumlah_dibayar: p.status_bayar === 'DP' ? String(p.jumlah_dibayar) : '',
     });
   };
 
@@ -221,7 +236,34 @@ function PesananPage({ onChange }: { onChange: () => void }) {
           Catatan
           <input value={form.catatan} onChange={(e) => setForm({ ...form, catatan: e.target.value })} />
         </label>
-        <p className="muted">Perkiraan total: <b>{rupiah(Math.round(estimasi))}</b> (dihitung final oleh server)</p>
+        <label>
+          Status bayar
+          <select value={form.status_bayar} onChange={(e) => setForm({ ...form, status_bayar: e.target.value as StatusBayar })}>
+            {STATUS_BAYAR.map((s) => <option key={s}>{s}</option>)}
+          </select>
+        </label>
+        {form.status_bayar !== 'Belum Bayar' && (
+          <label>
+            Metode bayar
+            <select required value={form.metode_bayar} onChange={(e) => setForm({ ...form, metode_bayar: e.target.value })}>
+              <option value="">Pilih metode</option>
+              {METODE_BAYAR.map((m) => <option key={m}>{m}</option>)}
+            </select>
+          </label>
+        )}
+        {form.status_bayar === 'DP' && (
+          <label>
+            Jumlah DP (Rp)
+            <input type="number" min="1" required value={form.jumlah_dibayar}
+              onChange={(e) => setForm({ ...form, jumlah_dibayar: e.target.value })} />
+          </label>
+        )}
+        <p className="muted">
+  Perkiraan total: <b>{rupiah(Math.round(estimasi))}</b> (dihitung final oleh server)
+  {form.status_bayar === 'DP' && Number(form.jumlah_dibayar) > 0 && (
+    <> · Sisa tagihan: <b>{rupiah(Math.max(Math.round(estimasi) - Number(form.jumlah_dibayar), 0))}</b></>
+  )}
+</p>
         <div className="actions">
           <button type="submit">{editId === null ? 'Buat Pesanan' : 'Simpan Perubahan'}</button>
           {editId !== null && <button type="button" className="ghost" onClick={reset}>Batal</button>}
@@ -240,33 +282,46 @@ function PesananPage({ onChange }: { onChange: () => void }) {
       {err && <p className="alert">{err}</p>}
       <Notice error={error} loading={loading} />
       <div className="table-wrap">
-        <table>
-          <thead>
-            <tr><th>Kode</th><th>Pelanggan</th><th>Layanan</th><th>Berat</th><th>Total</th><th>Status</th><th>Masuk</th><th>Aksi</th></tr>
-          </thead>
-          <tbody>
-            {data?.map((p) => (
-              <tr key={p.id}>
-                <td>{p.kode}</td>
-                <td>{p.pelanggan_nama}</td>
-                <td>{p.layanan_nama}</td>
-                <td>{p.berat_kg} kg</td>
-                <td>{rupiah(p.total_harga)}</td>
-                <td>
-                  <select value={p.status} onChange={(e) => changeStatus(p, e.target.value as Status)}>
-                    {STATUS.map((s) => <option key={s}>{s}</option>)}
-                  </select>
-                </td>
-                <td>{p.tanggal_masuk}</td>
-                <td className="actions">
-                  <button className="ghost" onClick={() => edit(p)}>Edit</button>
-                  <button className="danger" onClick={() => remove(p)}>Hapus</button>
-                </td>
-              </tr>
-            ))}
-            {data?.length === 0 && <tr><td colSpan={8} className="muted">Tidak ada pesanan</td></tr>}
-          </tbody>
-        </table>
+      <table>
+  <thead>
+    <tr>
+      <th>Kode</th><th>Pelanggan</th><th>Layanan</th><th>Berat</th><th>Total</th>
+      <th>Status</th><th>Status Bayar</th><th>Metode</th><th>Dibayar</th><th>Sisa Tagihan</th>
+      <th>Masuk</th><th>Catatan</th><th>Aksi</th>
+    </tr>
+  </thead>
+  <tbody>
+    {data?.map((p) => {
+      const dibayar = p.jumlah_dibayar ?? 0;
+      const sisa = Math.max(p.total_harga - dibayar, 0);
+      return (
+        <tr key={p.id}>
+          <td>{p.kode}</td>
+          <td>{p.pelanggan_nama}</td>
+          <td>{p.layanan_nama}</td>
+          <td>{p.berat_kg} kg</td>
+          <td>{rupiah(p.total_harga)}</td>
+          <td>
+            <select value={p.status} onChange={(e) => changeStatus(p, e.target.value as Status)}>
+              {STATUS.map((s) => <option key={s}>{s}</option>)}
+            </select>
+          </td>
+          <td>{p.status_bayar ?? 'Belum Bayar'}</td>
+          <td>{p.metode_bayar || '-'}</td>
+          <td>{dibayar > 0 ? rupiah(dibayar) : '-'}</td>
+          <td>{rupiah(sisa)}</td>
+          <td>{p.tanggal_masuk}</td>
+          <td>{p.catatan || '-'}</td>
+          <td className="actions">
+            <button className="ghost" onClick={() => edit(p)}>Edit</button>
+            <button className="danger" onClick={() => remove(p)}>Hapus</button>
+          </td>
+        </tr>
+      );
+    })}
+    {data?.length === 0 && <tr><td colSpan={13} className="muted">Tidak ada pesanan</td></tr>}
+  </tbody>
+</table>
       </div>
     </section>
   );

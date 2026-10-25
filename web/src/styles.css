@@ -12,7 +12,7 @@
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); }
-main { max-width: 1080px; margin: 0 auto; padding: 16px; }
+main { max-width: 1400px; margin: 0 auto; padding: 16px; }
 header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
 h1 { margin: 0; font-size: 1.6rem; color: var(--brand-dark); }
 h2 { margin: 24px 0 12px; font-size: 1.2rem; }
@@ -39,11 +39,23 @@ input, select { font: inherit; padding: 8px; border: 1px solid var(--line); bord
 .actions { display: flex; gap: 6px; align-items: center; }
 .table-wrap { overflow-x: auto; background: #fff; border: 1px solid var(--line); border-radius: 8px; margin-top: 8px; }
 table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
-th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
 th { background: #eef4f7; color: var(--muted); font-weight: 600; }
 tr:last-child td { border-bottom: 0; }
-td.actions { display: flex; }
+td.actions { display: table-cell; }
+td.actions button + button { margin-left: 6px; }
 .muted { color: var(--muted); }
 .ok { color: var(--ok); }
 .alert { color: var(--danger); background: #fbeceb; padding: 8px 12px; border-radius: 6px; }
 @media (max-width: 600px) { main { padding: 10px; } }
+
+/* Tabel pesanan lebih ringkas */
+table select { padding: 6px 8px; font-size: 0.85rem; }
+td.actions button { padding: 6px 10px; font-size: 0.8rem; }
+
+/* Kolom Catatan (ke-12 di tabel Pesanan) boleh turun baris */
+.table-wrap td:nth-child(12) {
+  white-space: normal;
+  min-width: 120px;
+  max-width: 200px;
+}
