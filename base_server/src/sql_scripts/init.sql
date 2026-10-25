@@ -34,15 +34,18 @@ CREATE TABLE IF NOT EXISTS layanan (
 );
 
 CREATE TABLE IF NOT EXISTS pesanan (
-  id            INTEGER PRIMARY KEY AUTOINCREMENT,
-  kode          TEXT NOT NULL DEFAULT '',
-  pelanggan_id  INTEGER NOT NULL REFERENCES pelanggan(id),
-  layanan_id    INTEGER NOT NULL REFERENCES layanan(id),
-  berat_kg      REAL NOT NULL,
-  total_harga   INTEGER NOT NULL,
-  status        TEXT NOT NULL DEFAULT 'Diterima',
-  tanggal_masuk TEXT NOT NULL DEFAULT (date('now')),
-  catatan       TEXT DEFAULT ''
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  kode           TEXT NOT NULL DEFAULT '',
+  pelanggan_id   INTEGER NOT NULL REFERENCES pelanggan(id),
+  layanan_id     INTEGER NOT NULL REFERENCES layanan(id),
+  berat_kg       REAL NOT NULL,
+  total_harga    INTEGER NOT NULL,
+  status         TEXT NOT NULL DEFAULT 'Diterima',
+  status_bayar   TEXT NOT NULL DEFAULT 'Belum Bayar',
+  metode_bayar   TEXT NOT NULL DEFAULT '',
+  jumlah_dibayar INTEGER NOT NULL DEFAULT 0,
+  tanggal_masuk  TEXT NOT NULL DEFAULT (date('now')),
+  catatan        TEXT DEFAULT ''
 );
 
 -- Data awal: hanya diisi saat tabel masih kosong

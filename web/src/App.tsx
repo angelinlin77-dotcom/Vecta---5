@@ -1,6 +1,6 @@
 import { FormEvent, ReactNode, useCallback, useEffect, useState } from 'react';
 import { api, rupiah } from './api';
-import { Dashboard, Layanan, Pelanggan, Pesanan, STATUS, Status, STATUS_BAYAR, METODE_BAYAR, StatusBayar } from './types';
+import { Dashboard, Layanan, Pelanggan, Pesanan, STATUS, Status, METODE_BAYAR, StatusBayar } from './types';
 
 function useData<T>(path: string) {
   const [data, setData] = useState<T | null>(null);
@@ -137,11 +137,11 @@ function CrudPage<T extends { id: number; nama: string }>(props: {
 
 interface PesananForm {
   pelanggan_id: string; layanan_id: string; berat_kg: string; catatan: string;
-  status_bayar: StatusBayar; metode_bayar: string; jumlah_dibayar: string;
+  metode_bayar: string; bayar: string;
 }
 const emptyPesanan: PesananForm = {
   pelanggan_id: '', layanan_id: '', berat_kg: '', catatan: '',
-  status_bayar: 'Belum Bayar', metode_bayar: '', jumlah_dibayar: '',
+  metode_bayar: '', bayar: '',
 };
 
 function PesananPage({ onChange }: { onChange: () => void }) {
@@ -157,32 +157,55 @@ function PesananPage({ onChange }: { onChange: () => void }) {
   const layanan = useData<Layanan[]>('/layanan').data ?? [];
   const [form, setForm] = useState<PesananForm>(emptyPesanan);
   const [editId, setEditId] = useState<number | null>(null);
+  const [editRow, setEditRow] = useState<Pesanan | null>(null);
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
 
+  // Perhitungan pembayaran
   const harga = layanan.find((l) => l.id === Number(form.layanan_id))?.harga_per_kg ?? 0;
-  const estimasi = harga * (Number(form.berat_kg) || 0);
-  const reset = () => { setForm(emptyPesanan); setEditId(null); };
+  const total = Math.round(harga * (Number(form.berat_kg) || 0));
+  const sudahBayar = editRow?.jumlah_dibayar ?? 0;
+  const sisaSekarang = Math.max(total - sudahBayar, 0);
+  const bayar = Number(form.bayar) || 0;
+  const totalDibayar = sudahBayar + bayar;
+  const sisaSetelah = Math.max(total - totalDibayar, 0);
+  const statusBaru: StatusBayar =
+    totalDibayar <= 0 ? 'Belum Bayar' : total > 0 && totalDibayar >= total ? 'Lunas' : 'DP';
+
+  const reset = () => { setForm(emptyPesanan); setEditId(null); setEditRow(null); };
   const done = (m: string) => { setMsg(m); setErr(''); reload(); onChange(); };
   const fail = (x: unknown) => { setErr((x as Error).message); setMsg(''); };
 
   async function submit(e: FormEvent) {
     e.preventDefault();
+    if (bayar < 0) return fail(new Error('Pembayaran tidak boleh negatif'));
+    if (bayar > sisaSekarang) return fail(new Error(`Pembayaran melebihi sisa tagihan (${rupiah(sisaSekarang)})`));
+    if (totalDibayar > 0 && !form.metode_bayar) return fail(new Error('Pilih metode bayar'));
+
     const body = {
       pelanggan_id: Number(form.pelanggan_id),
       layanan_id: Number(form.layanan_id),
       berat_kg: Number(form.berat_kg),
       catatan: form.catatan,
-      status_bayar: form.status_bayar,
-      metode_bayar: form.status_bayar === 'Belum Bayar' ? '' : form.metode_bayar,
-      jumlah_dibayar: form.status_bayar === 'DP' ? Number(form.jumlah_dibayar) : 0,
+      // saat edit, pertahankan status dan tanggal masuk yang lama
+      status: editRow?.status,
+      tanggal_masuk: editRow?.tanggal_masuk,
+      status_bayar: statusBaru,
+      metode_bayar: totalDibayar > 0 ? form.metode_bayar : '',
+      jumlah_dibayar: statusBaru === 'DP' ? totalDibayar : 0, // Lunas dihitung server
     };
     try {
       if (editId === null) await api.post('/pesanan', body);
       else await api.put(`/pesanan/${editId}`, body);
       done(editId === null ? 'Pesanan ditambahkan' : 'Pesanan diperbarui');
       reset();
-    } catch (x) { fail(x); }
+    } catch (x) {
+      console.error('Simpan gagal:', x);
+      fail(x);
+    } finally {
+      reload();
+      onChange();
+    }
   }
 
   async function changeStatus(p: Pesanan, s: Status) {
@@ -198,20 +221,25 @@ function PesananPage({ onChange }: { onChange: () => void }) {
 
   const edit = (p: Pesanan) => {
     setEditId(p.id);
+    setEditRow(p);
+    setMsg('');
+    setErr('');
     setForm({
       pelanggan_id: String(p.pelanggan_id),
       layanan_id: String(p.layanan_id),
       berat_kg: String(p.berat_kg),
       catatan: p.catatan,
-      status_bayar: p.status_bayar ?? 'Belum Bayar',
       metode_bayar: p.metode_bayar ?? '',
-      jumlah_dibayar: p.status_bayar === 'DP' ? String(p.jumlah_dibayar) : '',
+      bayar: '', // dikosongkan: diisi hanya untuk pembayaran tambahan
     });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   return (
     <section>
       <h2>Pesanan</h2>
+      {msg && <p className="ok">{msg}</p>}
+      {err && <p className="alert">{err}</p>}
       <form className="form" onSubmit={submit}>
         <label>
           Pelanggan
@@ -237,35 +265,40 @@ function PesananPage({ onChange }: { onChange: () => void }) {
           <input value={form.catatan} onChange={(e) => setForm({ ...form, catatan: e.target.value })} />
         </label>
         <label>
-          Status bayar
-          <select value={form.status_bayar} onChange={(e) => setForm({ ...form, status_bayar: e.target.value as StatusBayar })}>
-            {STATUS_BAYAR.map((s) => <option key={s}>{s}</option>)}
+          Bayar sekarang (Rp)
+          <input type="number" min="0" step="1" value={form.bayar}
+            onChange={(e) => setForm({ ...form, bayar: e.target.value })} />
+        </label>
+        <label>
+          Metode bayar
+          <select required={totalDibayar > 0} value={form.metode_bayar}
+            onChange={(e) => setForm({ ...form, metode_bayar: e.target.value })}>
+            <option value="">Pilih metode</option>
+            {METODE_BAYAR.map((m) => <option key={m}>{m}</option>)}
           </select>
         </label>
-        {form.status_bayar !== 'Belum Bayar' && (
-          <label>
-            Metode bayar
-            <select required value={form.metode_bayar} onChange={(e) => setForm({ ...form, metode_bayar: e.target.value })}>
-              <option value="">Pilih metode</option>
-              {METODE_BAYAR.map((m) => <option key={m}>{m}</option>)}
-            </select>
-          </label>
-        )}
-        {form.status_bayar === 'DP' && (
-          <label>
-            Jumlah DP (Rp)
-            <input type="number" min="1" required value={form.jumlah_dibayar}
-              onChange={(e) => setForm({ ...form, jumlah_dibayar: e.target.value })} />
-          </label>
-        )}
+
         <p className="muted">
-  Perkiraan total: <b>{rupiah(Math.round(estimasi))}</b> (dihitung final oleh server)
-  {form.status_bayar === 'DP' && Number(form.jumlah_dibayar) > 0 && (
-    <> · Sisa tagihan: <b>{rupiah(Math.max(Math.round(estimasi) - Number(form.jumlah_dibayar), 0))}</b></>
-  )}
-</p>
+          Perkiraan total: <b>{rupiah(total)}</b> (dihitung final oleh server)
+          {editId !== null && (
+            <>
+              {' · '}Sudah dibayar: <b>{rupiah(sudahBayar)}</b>
+              {' · '}Sisa tagihan saat ini: <b>{rupiah(sisaSekarang)}</b>
+            </>
+          )}
+          {bayar > 0 && (
+            <>
+              {' · '}Sisa setelah pembayaran ini: <b>{rupiah(sisaSetelah)}</b>
+            </>
+          )}
+          {' · '}Status bayar: <b>{statusBaru}</b>
+        </p>
+
         <div className="actions">
           <button type="submit">{editId === null ? 'Buat Pesanan' : 'Simpan Perubahan'}</button>
+          <button type="button" className="ghost" onClick={() => setForm({ ...form, bayar: String(sisaSekarang) })}>
+            Lunasi sisa
+          </button>
           {editId !== null && <button type="button" className="ghost" onClick={reset}>Batal</button>}
         </div>
       </form>
@@ -278,50 +311,48 @@ function PesananPage({ onChange }: { onChange: () => void }) {
         </select>
       </div>
 
-      {msg && <p className="ok">{msg}</p>}
-      {err && <p className="alert">{err}</p>}
       <Notice error={error} loading={loading} />
       <div className="table-wrap">
-      <table>
-  <thead>
-    <tr>
-      <th>Kode</th><th>Pelanggan</th><th>Layanan</th><th>Berat</th><th>Total</th>
-      <th>Status</th><th>Status Bayar</th><th>Metode</th><th>Dibayar</th><th>Sisa Tagihan</th>
-      <th>Masuk</th><th>Catatan</th><th>Aksi</th>
-    </tr>
-  </thead>
-  <tbody>
-    {data?.map((p) => {
-      const dibayar = p.jumlah_dibayar ?? 0;
-      const sisa = Math.max(p.total_harga - dibayar, 0);
-      return (
-        <tr key={p.id}>
-          <td>{p.kode}</td>
-          <td>{p.pelanggan_nama}</td>
-          <td>{p.layanan_nama}</td>
-          <td>{p.berat_kg} kg</td>
-          <td>{rupiah(p.total_harga)}</td>
-          <td>
-            <select value={p.status} onChange={(e) => changeStatus(p, e.target.value as Status)}>
-              {STATUS.map((s) => <option key={s}>{s}</option>)}
-            </select>
-          </td>
-          <td>{p.status_bayar ?? 'Belum Bayar'}</td>
-          <td>{p.metode_bayar || '-'}</td>
-          <td>{dibayar > 0 ? rupiah(dibayar) : '-'}</td>
-          <td>{rupiah(sisa)}</td>
-          <td>{p.tanggal_masuk}</td>
-          <td>{p.catatan || '-'}</td>
-          <td className="actions">
-            <button className="ghost" onClick={() => edit(p)}>Edit</button>
-            <button className="danger" onClick={() => remove(p)}>Hapus</button>
-          </td>
-        </tr>
-      );
-    })}
-    {data?.length === 0 && <tr><td colSpan={13} className="muted">Tidak ada pesanan</td></tr>}
-  </tbody>
-</table>
+        <table>
+          <thead>
+            <tr>
+              <th>Kode</th><th>Pelanggan</th><th>Layanan</th><th>Berat</th><th>Total</th>
+              <th>Status</th><th>Status Bayar</th><th>Metode</th><th>Dibayar</th><th>Sisa Tagihan</th>
+              <th>Masuk</th><th>Catatan</th><th>Aksi</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data?.map((p) => {
+              const dibayar = p.jumlah_dibayar ?? 0;
+              const sisa = Math.max(p.total_harga - dibayar, 0);
+              return (
+                <tr key={p.id}>
+                  <td>{p.kode}</td>
+                  <td>{p.pelanggan_nama}</td>
+                  <td>{p.layanan_nama}</td>
+                  <td>{p.berat_kg} kg</td>
+                  <td>{rupiah(p.total_harga)}</td>
+                  <td>
+                    <select value={p.status} onChange={(e) => changeStatus(p, e.target.value as Status)}>
+                      {STATUS.map((s) => <option key={s}>{s}</option>)}
+                    </select>
+                  </td>
+                  <td>{p.status_bayar ?? 'Belum Bayar'}</td>
+                  <td>{p.metode_bayar || '-'}</td>
+                  <td>{dibayar > 0 ? rupiah(dibayar) : '-'}</td>
+                  <td>{rupiah(sisa)}</td>
+                  <td>{p.tanggal_masuk}</td>
+                  <td>{p.catatan || '-'}</td>
+                  <td className="actions">
+                    <button className="ghost" onClick={() => edit(p)}>Edit</button>
+                    <button className="danger" onClick={() => remove(p)}>Hapus</button>
+                  </td>
+                </tr>
+              );
+            })}
+            {data?.length === 0 && <tr><td colSpan={13} className="muted">Tidak ada pesanan</td></tr>}
+          </tbody>
+        </table>
       </div>
     </section>
   );

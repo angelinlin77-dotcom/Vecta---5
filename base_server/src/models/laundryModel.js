@@ -5,7 +5,11 @@ const TABLES = {
   pelanggan: { cols: ['nama', 'telepon', 'alamat'], usedBy: 'pelanggan_id' },
   layanan: { cols: ['nama', 'harga_per_kg', 'estimasi_hari', 'deskripsi'], usedBy: 'layanan_id' },
 };
-const PESANAN_COLS = ['pelanggan_id', 'layanan_id', 'berat_kg', 'total_harga', 'status', 'tanggal_masuk', 'catatan'];
+const PESANAN_COLS = [
+  'pelanggan_id', 'layanan_id', 'berat_kg', 'total_harga', 'status',
+  'status_bayar', 'metode_bayar', 'jumlah_dibayar',
+  'tanggal_masuk', 'catatan',
+];
 const PESANAN_SQL = `
   SELECT p.*, c.nama AS pelanggan_nama, l.nama AS layanan_nama
   FROM pesanan p
@@ -97,9 +101,19 @@ const deletePesanan = async (id) => {
 };
 
 const dashboard = async () => {
-  const total = await dbGet('SELECT COUNT(*) AS n, COALESCE(SUM(total_harga), 0) AS t FROM pesanan');
+  const total = await dbGet(
+    `SELECT COUNT(*) AS n,
+            COALESCE(SUM(total_harga), 0) AS t,
+            COALESCE(SUM(jumlah_dibayar), 0) AS d
+     FROM pesanan`
+  );
   const perStatus = await dbAll('SELECT status, COUNT(*) AS n FROM pesanan GROUP BY status');
-  return { total_pesanan: total.n, total_pendapatan: total.t, per_status: Object.fromEntries(perStatus.map((r) => [r.status, r.n])) };
+  return {
+    total_pesanan: total.n,
+    total_transaksi: total.t,     // jumlah semua tagihan
+    total_pendapatan: total.d,    // uang yang sudah masuk (DP + lunas)
+    per_status: Object.fromEntries(perStatus.map((r) => [r.status, r.n])),
+  };
 };
 
 module.exports = {
