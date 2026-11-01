@@ -185,3 +185,86 @@ td.actions button { padding: 8px 12px; font-size: 1rem; }
 .pel-toolbar input:focus-visible, .pel-toolbar select:focus-visible, .pel-panel input:focus-visible, .pel-panel textarea:focus-visible { border-color: var(--pel); }
 .pel-panel input.bad:focus-visible { border-color: #d9362b; outline-color: rgba(217, 54, 43, 0.25); }
 .pel-note { background: #fafbfb; }
+
+/* ===== Halaman Layanan & Tarif (mengikuti pola halaman Pelanggan) ===== */
+.lay {
+  --lay: var(--brand);
+  --lay-dark: var(--brand-dark);
+  --lay-soft: #e8f4f2;
+  --warn-bg: #fdf3e3;
+  --warn-line: #f2dcb4;
+  --warn-ink: #9a4a00;
+}
+.lay-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin: 28px 0 18px; }
+.lay-head h2 { margin: 0; font-size: 1.6rem; }
+.lay-sub { margin: 4px 0 0; color: var(--muted); font-size: 0.95rem; }
+.lay .live-clock { margin: 2px 0 0; font-size: 0.8rem; }
+
+/* Tombol: selektor .lay button.x supaya menang atas button:hover global */
+.lay button { font-size: 0.95rem; padding: 9px 16px; border-radius: 8px; font-weight: 600; }
+.lay button.lay-btn { background: var(--lay); border-color: var(--lay); color: #fff; }
+.lay button.lay-btn:hover { background: var(--lay-dark); border-color: var(--lay-dark); }
+.lay button.lay-outline { background: #fff; color: var(--lay-dark); border-color: var(--lay); padding: 6px 12px; font-size: 0.85rem; }
+.lay button.lay-outline:hover { background: var(--lay-soft); }
+.lay button.lay-del { background: #fff; color: var(--danger); border-color: #e7b4b0; padding: 6px 12px; font-size: 0.85rem; }
+.lay button.lay-del:hover { background: #fbeceb; }
+.lay button.lay-x { background: #fff; color: var(--muted); border-color: var(--line); padding: 6px 12px; }
+.lay button.lay-x:hover { background: #f2f5f6; }
+.lay-panel-actions button.lay-outline { padding: 9px 16px; font-size: 0.95rem; }
+
+/* Layout */
+.lay-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; align-items: start; }
+.lay-body.with-panel { grid-template-columns: minmax(0, 1fr) 380px; }
+@media (max-width: 1100px) { .lay-body.with-panel { grid-template-columns: minmax(0, 1fr); } }
+
+.lay-card { background: #fff; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+
+/* Chip filter */
+.lay-chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 16px; }
+.lay .lay-chips button.lay-chip {
+  background: #fff; color: var(--ink); border: 1px solid var(--line);
+  border-radius: 999px; padding: 6px 16px; font-size: 0.85rem; font-weight: 500;
+}
+.lay .lay-chips button.lay-chip:hover { background: #f2f5f6; }
+.lay .lay-chips button.lay-chip.on { background: #14262d; border-color: #14262d; color: #fff; }
+
+/* Tabel */
+.lay-tablewrap { overflow-x: auto; }
+.lay table { font-size: 0.95rem; }
+.lay th { background: #f6f8f9; font-size: 0.78rem; letter-spacing: 0.04em; text-transform: uppercase; position: static; box-shadow: none; }
+.lay th.right { text-align: right; }
+.lay td { padding: 14px 12px; vertical-align: middle; }
+.lay td:first-child { white-space: normal; min-width: 200px; }
+.lay td small { display: block; color: var(--muted); font-size: 0.8rem; margin-top: 2px; }
+.lay-name { display: block; color: var(--lay-dark); }
+.lay tbody tr:hover td { background: #f7fafa; }
+.lay tbody tr.editing td { background: var(--lay-soft); }
+.lay-actions { display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
+.lay-editing { color: var(--lay-dark); font-size: 0.8rem; font-weight: 700; }
+.lay-note { display: flex; gap: 8px; margin: 0; padding: 14px 16px; border-top: 1px solid var(--line); background: #fafbfb; color: var(--muted); font-size: 0.8rem; }
+
+/* Panel tambah/edit */
+.lay-panel { position: sticky; top: 16px; background: #fff; border: 2px solid var(--lay); border-radius: 14px; padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+.lay-panel-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.lay-panel-head h3 { margin: 0; font-size: 1.15rem; }
+.lay-panel label { display: flex; flex-direction: column; gap: 6px; font-size: 0.9rem; font-weight: 600; }
+.lay-panel label i { color: var(--danger); font-style: normal; }
+.lay-panel input { width: 100%; min-width: 0; font: inherit; font-size: 1rem; font-weight: 400; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; }
+.lay-panel input.bad { border: 2px solid #d9362b; }
+.lay-panel em { color: #c0261b; font-style: normal; font-weight: 500; font-size: 0.82rem; }
+.lay-hint { color: var(--muted); font-weight: 400; font-size: 0.8rem; }
+
+/* Input dengan awalan "Rp" / akhiran "hari" */
+.lay-prefix, .lay-suffix { display: flex; align-items: stretch; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: #fff; }
+.lay-prefix:focus-within, .lay-suffix:focus-within { border-color: var(--lay); }
+.lay-prefix.bad, .lay-suffix.bad { border: 2px solid #d9362b; }
+.lay-prefix > span, .lay-suffix > span { display: flex; align-items: center; padding: 0 12px; background: #f3f5f6; color: var(--muted); font-size: 0.9rem; font-weight: 500; }
+.lay-prefix > span { border-right: 1px solid var(--line); }
+.lay-suffix > span { border-left: 1px solid var(--line); }
+.lay-panel .lay-prefix input, .lay-panel .lay-suffix input { border: 0; border-radius: 0; flex: 1; outline-offset: -3px; }
+
+/* Banner perubahan harga */
+.lay-warn { display: flex; flex-direction: column; gap: 2px; padding: 12px; border-radius: 10px; background: var(--warn-bg); border: 1px solid var(--warn-line); color: var(--warn-ink); font-size: 0.82rem; }
+.lay-warn b { font-weight: 700; }
+
+.lay-panel-actions { display: flex; justify-content: flex-end; gap: 10px; }

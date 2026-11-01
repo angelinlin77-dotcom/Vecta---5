@@ -42,8 +42,8 @@ const parse = {
   pelanggan: (b) => ({ nama: text(b.nama, 'nama'), telepon: text(b.telepon, 'telepon'), alamat: text(b.alamat, 'alamat', false) }),
   layanan: (b) => ({
     nama: text(b.nama, 'nama'),
-    harga_per_kg: num(b.harga_per_kg, 'harga_per_kg', { int: true }),
-    estimasi_hari: num(b.estimasi_hari, 'estimasi_hari', { int: true }),
+    harga_per_kg: num(b.harga_per_kg, 'harga_per_kg', { int: true, min: 1 }),
+    estimasi_hari: num(b.estimasi_hari, 'estimasi_hari', { int: true, min: 1 }),
     deskripsi: text(b.deskripsi, 'deskripsi', false),
   }),
 };
@@ -75,6 +75,8 @@ const crud = (name) => ({
 
 /*
   Pesanan: total_harga dihitung server dari berat x harga layanan.
+  Saat update, kalau layanan dan berat TIDAK berubah, total lama dipertahankan
+  supaya perubahan harga layanan tidak mengubah pesanan yang sudah ada.
 
   Pembayaran bersifat BERTAHAP:
   - jumlah_dibayar di database = total yang SUDAH dibayar (akumulasi).
@@ -99,7 +101,15 @@ const pesananBody = async (b, existing = null) => {
   const lay = await m.findById('layanan', layanan_id);
   if (!lay) throw bad('layanan_id tidak ditemukan');
 
-  const total_harga = Math.round(berat_kg * lay.harga_per_kg);
+  // Kalau layanan dan berat tidak berubah, pertahankan total lama
+  // supaya perubahan harga layanan tidak mengubah pesanan yang sudah ada.
+  const tidakBerubah =
+    existing &&
+    existing.layanan_id === layanan_id &&
+    Number(existing.berat_kg) === berat_kg;
+  const total_harga = tidakBerubah
+    ? existing.total_harga
+    : Math.round(berat_kg * lay.harga_per_kg);
 
   // ---- Pembayaran ----
   const dibayar_sebelumnya = Math.min(Number(existing?.jumlah_dibayar) || 0, total_harga);

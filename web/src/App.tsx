@@ -81,105 +81,6 @@ function DashboardCards({ version }: { version: number }) {
   );
 }
 
-interface Field { key: string; label: string; type: 'text' | 'number'; required?: boolean }
-interface Column<T> { label: string; render: (row: T) => ReactNode }
-
-function CrudPage<T extends { id: number; nama: string }>(props: {
-  title: string;
-  path: string;
-  fields: Field[];
-  columns: Column<T>[];
-  onChange: () => void;
-}) {
-  const { title, path, fields, columns, onChange } = props;
-  const { data, error, loading, reload } = useData<T[]>(path);
-  const sorted = [...(data ?? [])].sort((a, b) => a.nama.localeCompare(b.nama, 'id'));
-  const [form, setForm] = useState<Record<string, string>>({});
-  const [editId, setEditId] = useState<number | null>(null);
-  const [msg, setMsg] = useState('');
-  const [err, setErr] = useState('');
-
-  const reset = () => { setForm({}); setEditId(null); };
-
-  async function submit(e: FormEvent) {
-    e.preventDefault();
-    const body = Object.fromEntries(
-      fields.map((f) => [f.key, f.type === 'number' && form[f.key] !== '' ? Number(form[f.key]) : form[f.key] ?? '']),
-    );
-    try {
-      if (editId === null) await api.post(path, body);
-      else await api.put(`${path}/${editId}`, body);
-      setMsg(editId === null ? `${title} ditambahkan` : `${title} diperbarui`);
-      setErr('');
-      reset();
-      reload();
-      onChange();
-    } catch (x) { setErr((x as Error).message); setMsg(''); }
-  }
-
-  async function remove(row: T) {
-    if (!confirm(`Hapus ${title.toLowerCase()} ini?`)) return;
-    try {
-      await api.del(`${path}/${row.id}`);
-      setMsg(`${title} dihapus`);
-      setErr('');
-      reload();
-      onChange();
-    } catch (x) { setErr((x as Error).message); setMsg(''); }
-  }
-
-  const edit = (row: T) => {
-    setEditId(row.id);
-    setForm(Object.fromEntries(fields.map((f) => [f.key, String((row as unknown as Record<string, unknown>)[f.key] ?? '')])));
-  };
-
-  return (
-    <section>
-      <PageTitle>{title}</PageTitle>
-      <form className="form" onSubmit={submit}>
-        {fields.map((f) => (
-          <label key={f.key}>
-            {f.label}
-            <input
-              type={f.type}
-              min={f.type === 'number' ? 1 : undefined}
-              required={f.required}
-              value={form[f.key] ?? ''}
-              onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
-            />
-          </label>
-        ))}
-        <div className="actions">
-          <button type="submit">{editId === null ? 'Tambah' : 'Simpan'}</button>
-          {editId !== null && <button type="button" className="ghost" onClick={reset}>Batal</button>}
-        </div>
-      </form>
-      {msg && <p className="ok">{msg}</p>}
-      {err && <p className="alert">{err}</p>}
-      <Notice error={error} loading={loading} />
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>{columns.map((c) => <th key={c.label}>{c.label}</th>)}<th>Aksi</th></tr>
-          </thead>
-          <tbody>
-            {sorted.map((row) => (
-              <tr key={row.id}>
-                {columns.map((c) => <td key={c.label}>{c.render(row)}</td>)}
-                <td className="actions">
-                  <button className="ghost" onClick={() => edit(row)}>Edit</button>
-                  <button className="danger" onClick={() => remove(row)}>Hapus</button>
-                </td>
-              </tr>
-            ))}
-            {data?.length === 0 && <tr><td colSpan={columns.length + 1} className="muted">Belum ada data</td></tr>}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
-}
-
 interface PesananForm {
   pelanggan_id: string; layanan_id: string; berat_kg: string; catatan: string;
   metode_bayar: string; bayar: string;
@@ -795,6 +696,295 @@ function PelangganPage({ version, onChange }: { version: number; onChange: () =>
   );
 }
 
+// ===== Halaman Layanan & Tarif =====
+interface LayananForm {
+  nama: string;
+  harga_per_kg: string;
+  estimasi_hari: string;
+  deskripsi: string;
+}
+const emptyLayanan: LayananForm = { nama: '', harga_per_kg: '', estimasi_hari: '', deskripsi: '' };
+
+type LayananFilter = 'semua' | 'dipakai' | 'belum';
+
+function LayananPage({ version, onChange }: { version: number; onChange: () => void }) {
+  const lay = useData<Layanan[]>('/layanan');
+  const pes = useData<Pesanan[]>(`/pesanan?v=${version}`);
+
+  const [filter, setFilter] = useState<LayananFilter>('semua');
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [editId, setEditId] = useState<number | null>(null);
+  const [form, setForm] = useState<LayananForm>(emptyLayanan);
+  const [submitted, setSubmitted] = useState(false);
+  const [msg, setMsg] = useState('');
+  const [err, setErr] = useState('');
+
+  // Gabungkan layanan dengan jumlah pesanan yang memakainya
+  const rows = useMemo(() => {
+    const pesanan = pes.data ?? [];
+    return [...(lay.data ?? [])]
+      .sort((a, b) => a.nama.localeCompare(b.nama, 'id'))
+      .map((l) => ({ ...l, dipakai: pesanan.filter((o) => o.layanan_id === l.id).length }));
+  }, [lay.data, pes.data]);
+
+  const jmlDipakai = rows.filter((r) => r.dipakai > 0).length;
+  const shown = rows.filter((r) =>
+    filter === 'semua' ? true : filter === 'dipakai' ? r.dipakai > 0 : r.dipakai === 0,
+  );
+
+  const editing = rows.find((r) => r.id === editId);
+  const hargaBaru = Number(form.harga_per_kg);
+  const hargaBerubah =
+    editing !== undefined && hargaBaru > 0 && hargaBaru !== editing.harga_per_kg;
+  const estimasiBaru = Number(form.estimasi_hari);
+
+  // Validasi
+  const namaMsg = submitted && !form.nama.trim() ? 'Nama layanan wajib diisi.' : '';
+  const hargaMsg = submitted && !(hargaBaru > 0) ? 'Harga harus lebih dari 0.' : '';
+  const estMsg =
+    submitted && !(Number.isInteger(estimasiBaru) && estimasiBaru >= 1)
+      ? 'Estimasi minimal 1 hari.'
+      : '';
+
+  const closePanel = () => {
+    setPanelOpen(false);
+    setEditId(null);
+    setForm(emptyLayanan);
+    setSubmitted(false);
+  };
+
+  const openTambah = () => {
+    setEditId(null);
+    setForm(emptyLayanan);
+    setSubmitted(false);
+    setMsg('');
+    setErr('');
+    setPanelOpen(true);
+  };
+
+  const openEdit = (r: Layanan) => {
+    setEditId(r.id);
+    setForm({
+      nama: r.nama,
+      harga_per_kg: String(r.harga_per_kg),
+      estimasi_hari: String(r.estimasi_hari),
+      deskripsi: r.deskripsi ?? '',
+    });
+    setSubmitted(false);
+    setMsg('');
+    setErr('');
+    setPanelOpen(true);
+  };
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    setSubmitted(true);
+    if (!form.nama.trim() || !(hargaBaru > 0) || !(Number.isInteger(estimasiBaru) && estimasiBaru >= 1)) return;
+    const body = {
+      nama: form.nama.trim(),
+      harga_per_kg: hargaBaru,
+      estimasi_hari: estimasiBaru,
+      deskripsi: form.deskripsi.trim(),
+    };
+    try {
+      if (editId === null) await api.post('/layanan', body);
+      else await api.put(`/layanan/${editId}`, body);
+      setMsg(editId === null ? 'Layanan ditambahkan' : 'Layanan diperbarui');
+      setErr('');
+      closePanel();
+      lay.reload();
+      onChange();
+    } catch (x) {
+      setErr((x as Error).message);
+      setMsg('');
+    }
+  }
+
+  async function remove(r: Layanan) {
+    if (!confirm(`Hapus layanan ${r.nama}?`)) return;
+    try {
+      await api.del(`/layanan/${r.id}`);
+      setMsg('Layanan dihapus');
+      setErr('');
+      if (editId === r.id) closePanel();
+      lay.reload();
+      onChange();
+    } catch (x) {
+      setErr((x as Error).message);
+      setMsg('');
+    }
+  }
+
+  return (
+    <section className="lay">
+      <div className="lay-head">
+        <div>
+          <h2>Layanan &amp; Tarif</h2>
+          <p className="lay-sub">Atur daftar layanan, harga, dan estimasi pengerjaan</p>
+          <LiveClock />
+        </div>
+        <button type="button" className="lay-btn" onClick={openTambah}>+ Tambah Layanan</button>
+      </div>
+
+      {msg && <p className="ok">{msg}</p>}
+      {err && <p className="alert">{err}</p>}
+      <Notice error={lay.error || pes.error} loading={lay.loading && !lay.data} />
+
+      <div className={panelOpen ? 'lay-body with-panel' : 'lay-body'}>
+        <div className="lay-main">
+          <div className="lay-card">
+            <div className="lay-chips">
+              <button type="button" className={filter === 'semua' ? 'lay-chip on' : 'lay-chip'} onClick={() => setFilter('semua')}>
+                Semua ({rows.length})
+              </button>
+              <button type="button" className={filter === 'dipakai' ? 'lay-chip on' : 'lay-chip'} onClick={() => setFilter('dipakai')}>
+                Sudah dipakai ({jmlDipakai})
+              </button>
+              <button type="button" className={filter === 'belum' ? 'lay-chip on' : 'lay-chip'} onClick={() => setFilter('belum')}>
+                Belum dipakai ({rows.length - jmlDipakai})
+              </button>
+            </div>
+
+            <div className="lay-tablewrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Layanan</th>
+                    <th>Harga</th>
+                    <th>Estimasi</th>
+                    <th>Dipakai</th>
+                    <th className="right">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {shown.map((r) => (
+                    <tr key={r.id} className={r.id === editId ? 'editing' : ''}>
+                      <td>
+                        <b className="lay-name">{r.nama}</b>
+                        <small>{r.deskripsi || '-'}</small>
+                      </td>
+                      <td><b>{rupiah(r.harga_per_kg)}</b> <span className="muted">/ kg</span></td>
+                      <td>
+                        {r.estimasi_hari} hari <span className="muted">({r.estimasi_hari * 24} jam)</span>
+                      </td>
+                      <td className={r.dipakai ? '' : 'muted'}>
+                        {r.dipakai ? `${r.dipakai} pesanan` : 'Belum dipakai'}
+                      </td>
+                      <td>
+                        <div className="lay-actions">
+                          {r.id === editId ? (
+                            <span className="lay-editing">sedang diedit</span>
+                          ) : (
+                            <>
+                              <button type="button" className="lay-outline" onClick={() => openEdit(r)}>Edit</button>
+                              {r.dipakai === 0 && (
+                                <button type="button" className="lay-del" onClick={() => remove(r)}>Hapus</button>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {shown.length === 0 && (
+                    <tr><td colSpan={5} className="muted">{rows.length ? 'Tidak ada layanan pada filter ini' : 'Belum ada data'}</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <p className="lay-note">
+              <span aria-hidden="true">ⓘ</span>
+              Layanan yang sudah dipakai pesanan tidak bisa dihapus. Tombol Hapus hanya muncul untuk layanan yang belum dipakai.
+            </p>
+          </div>
+        </div>
+
+        {panelOpen && (
+          <form className="lay-panel" onSubmit={submit} noValidate>
+            <div className="lay-panel-head">
+              <h3>{editId === null ? 'Tambah Layanan' : 'Edit Layanan'}</h3>
+              <button type="button" className="lay-x" aria-label="Tutup" onClick={closePanel}>✕</button>
+            </div>
+
+            <label>
+              <span>Nama layanan <i>*</i></span>
+              <input
+                autoFocus
+                className={namaMsg ? 'bad' : ''}
+                placeholder="Contoh: Cuci Kering"
+                value={form.nama}
+                onChange={(e) => setForm({ ...form, nama: e.target.value })}
+              />
+              {namaMsg && <em>{namaMsg}</em>}
+            </label>
+
+            <label>
+              <span>Harga per kg <i>*</i></span>
+              <div className={hargaMsg ? 'lay-prefix bad' : 'lay-prefix'}>
+                <span>Rp</span>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  inputMode="numeric"
+                  value={form.harga_per_kg}
+                  onChange={(e) => setForm({ ...form, harga_per_kg: e.target.value })}
+                />
+              </div>
+              {hargaMsg && <em>{hargaMsg}</em>}
+            </label>
+
+            <label>
+              <span>Estimasi pengerjaan <i>*</i></span>
+              <div className={estMsg ? 'lay-suffix bad' : 'lay-suffix'}>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  inputMode="numeric"
+                  value={form.estimasi_hari}
+                  onChange={(e) => setForm({ ...form, estimasi_hari: e.target.value })}
+                />
+                <span>hari</span>
+              </div>
+              {estMsg && <em>{estMsg}</em>}
+              {estimasiBaru >= 1 && <small className="lay-hint">Setara {estimasiBaru * 24} jam.</small>}
+            </label>
+
+            <label>
+              <span>Deskripsi</span>
+              <input
+                placeholder="Contoh: Cuci dan keringkan, tanpa setrika"
+                value={form.deskripsi}
+                onChange={(e) => setForm({ ...form, deskripsi: e.target.value })}
+              />
+            </label>
+
+            {hargaBerubah && editing && (
+              <div className="lay-warn">
+                <b>Harga berubah dari {rupiah(editing.harga_per_kg)} ke {rupiah(hargaBaru)}</b>
+                <span>
+                  Hanya berlaku untuk pesanan baru.
+                  {editing.dipakai > 0 &&
+                    ` ${editing.dipakai} pesanan lama tetap tercatat ${rupiah(editing.harga_per_kg)}/kg.`}
+                </span>
+              </div>
+            )}
+
+            <div className="lay-panel-actions">
+              <button type="button" className="lay-outline" onClick={closePanel}>Batal</button>
+              <button type="submit" className="lay-btn">
+                {editId === null ? 'Simpan Layanan' : 'Simpan Perubahan'}
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+    </section>
+  );
+}
+
 const TABS = ['Pesanan', 'Pelanggan', 'Layanan'] as const;
 
 export default function App() {
@@ -812,28 +1002,10 @@ export default function App() {
           ))}
         </nav>
       </header>
-      {tab !== 'Pelanggan' && <DashboardCards version={version} />}
+      {tab === 'Pesanan' && <DashboardCards version={version} />}
       {tab === 'Pesanan' && <PesananPage onChange={refresh} />}
       {tab === 'Pelanggan' && <PelangganPage version={version} onChange={refresh} />}
-      {tab === 'Layanan' && (
-        <CrudPage<Layanan>
-          title="Layanan"
-          path="/layanan"
-          onChange={refresh}
-          fields={[
-            { key: 'nama', label: 'Nama layanan', type: 'text', required: true },
-            { key: 'harga_per_kg', label: 'Harga per kg (Rp)', type: 'number', required: true },
-            { key: 'estimasi_hari', label: 'Estimasi (hari)', type: 'number', required: true },
-            { key: 'deskripsi', label: 'Deskripsi', type: 'text' },
-          ]}
-          columns={[
-            { label: 'Nama', render: (r) => r.nama },
-            { label: 'Harga/kg', render: (r) => rupiah(r.harga_per_kg) },
-            { label: 'Estimasi', render: (r) => `${r.estimasi_hari} hari` },
-            { label: 'Deskripsi', render: (r) => r.deskripsi },
-          ]}
-        />
-      )}
+      {tab === 'Layanan' && <LayananPage version={version} onChange={refresh} />}
     </main>
   );
 }
