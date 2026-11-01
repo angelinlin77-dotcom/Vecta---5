@@ -397,7 +397,7 @@ export default function App() {
   return (
     <main>
       <header>
-        <h1>Laundry</h1>
+        <h1>Milky Wash</h1>
         <nav>
           {TABS.map((t) => (
             <button key={t} className={t === tab ? 'tab active' : 'tab'} onClick={() => setTab(t)}>{t}</button>
