@@ -23,12 +23,20 @@ const Notice = ({ error, loading }: { error: string; loading: boolean }) =>
 
 function DashboardCards({ version }: { version: number }) {
   const { data, error } = useData<Dashboard>(`/dashboard?v=${version}`);
+  // Semua pesanan (tanpa filter) supaya total kartu selalu sama dengan isi tabel
+  const semua = useData<Pesanan[]>(`/pesanan?v=${version}`).data;
   if (error || !data) return null;
+  const totalTransaksi = semua
+    ? semua.reduce((sum, p) => sum + (p.total_harga ?? 0), 0)
+    : data.total_transaksi ?? 0;
+  const totalPendapatan = semua
+    ? semua.reduce((sum, p) => sum + (p.jumlah_dibayar ?? 0), 0)
+    : data.total_pendapatan ?? 0;
   return (
     <section className="cards">
-      <div className="card"><span>Total pesanan</span><b>{data.total_pesanan}</b></div>
-      <div className="card"><span>Total transaksi</span><b>{rupiah(data.total_transaksi ?? 0)}</b></div>
-      <div className="card"><span>Pendapatan (sudah dibayar)</span><b>{rupiah(data.total_pendapatan ?? 0)}</b></div>
+      <div className="card"><span>Total pesanan</span><b>{semua ? semua.length : data.total_pesanan}</b></div>
+      <div className="card"><span>Total transaksi</span><b>{rupiah(totalTransaksi)}</b></div>
+      <div className="card"><span>Pendapatan (sudah dibayar)</span><b>{rupiah(totalPendapatan)}</b></div>
       {STATUS.map((s) => (
         <div className="card" key={s}><span>{s}</span><b>{data.per_status[s] ?? 0}</b></div>
       ))}
@@ -144,6 +152,15 @@ const emptyPesanan: PesananForm = {
   metode_bayar: '', bayar: '',
 };
 
+// Pesanan + tanggal bayar terakhir (diisi otomatis oleh server)
+type PesananRow = Pesanan & { tanggal_pelunasan?: string | null };
+
+// Tampilan status bayar: "DP" ditampilkan sebagai "Belum Lunas"
+const labelBayar = (s?: string) => (s === 'DP' ? 'Belum Lunas' : s ?? 'Belum Bayar');
+
+// Tanggal hari ini (YYYY-MM-DD) menurut jam komputer
+const tanggalHariIni = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+
 function PesananPage({ onChange }: { onChange: () => void }) {
   const [status, setStatus] = useState('');
   const [q, setQ] = useState('');
@@ -171,6 +188,8 @@ function PesananPage({ onChange }: { onChange: () => void }) {
   const sisaSetelah = Math.max(total - totalDibayar, 0);
   const statusBaru: StatusBayar =
     totalDibayar <= 0 ? 'Belum Bayar' : total > 0 && totalDibayar >= total ? 'Lunas' : 'DP';
+  // Kalau pesanan sudah pernah dibayar sebagian, total awal tidak ditampilkan lagi
+  const sudahAdaPembayaran = editId !== null && sudahBayar > 0;
 
   const reset = () => { setForm(emptyPesanan); setEditId(null); setEditRow(null); };
   const done = (m: string) => { setMsg(m); setErr(''); reload(); onChange(); };
@@ -190,21 +209,24 @@ function PesananPage({ onChange }: { onChange: () => void }) {
       // saat edit, pertahankan status dan tanggal masuk yang lama
       status: editRow?.status,
       tanggal_masuk: editRow?.tanggal_masuk,
-      status_bayar: statusBaru,
       metode_bayar: totalDibayar > 0 ? form.metode_bayar : '',
-      jumlah_dibayar: statusBaru === 'DP' ? totalDibayar : 0, // Lunas dihitung server
+      // dikirim lengkap supaya cocok dengan controller versi lama maupun baru
+      status_bayar: statusBaru,
+      jumlah_dibayar: statusBaru === 'DP' ? totalDibayar : 0,
+      bayar_sekarang: bayar,
     };
     try {
-      if (editId === null) await api.post('/pesanan', body);
-      else await api.put(`/pesanan/${editId}`, body);
-      done(editId === null ? 'Pesanan ditambahkan' : 'Pesanan diperbarui');
+      const hasil = (editId === null
+        ? await api.post<Pesanan>('/pesanan', body)
+        : await api.put<Pesanan>(`/pesanan/${editId}`, body)) as PesananRow;
+      done(
+        (editId === null ? 'Pesanan ditambahkan' : 'Pesanan diperbarui') +
+        ` | tgl bayar tersimpan: ${hasil?.tanggal_pelunasan ?? 'KOSONG'}`,
+      );
       reset();
     } catch (x) {
       console.error('Simpan gagal:', x);
       fail(x);
-    } finally {
-      reload();
-      onChange();
     }
   }
 
@@ -277,21 +299,26 @@ function PesananPage({ onChange }: { onChange: () => void }) {
             {METODE_BAYAR.map((m) => <option key={m}>{m}</option>)}
           </select>
         </label>
+        <label>
+          Tanggal bayar (otomatis)
+          <input type="text" readOnly value={tanggalHariIni()} />
+        </label>
 
         <p className="muted">
-          Perkiraan total: <b>{rupiah(total)}</b> (dihitung final oleh server)
-          {editId !== null && (
+          {sudahAdaPembayaran ? (
             <>
-              {' · '}Sudah dibayar: <b>{rupiah(sudahBayar)}</b>
+              Sudah dibayar: <b>{rupiah(sudahBayar)}</b>
               {' · '}Sisa tagihan saat ini: <b>{rupiah(sisaSekarang)}</b>
             </>
+          ) : (
+            <>Perkiraan total: <b>{rupiah(total)}</b> (dihitung final oleh server)</>
           )}
           {bayar > 0 && (
             <>
               {' · '}Sisa setelah pembayaran ini: <b>{rupiah(sisaSetelah)}</b>
             </>
           )}
-          {' · '}Status bayar: <b>{statusBaru}</b>
+          {' · '}Status bayar: <b>{labelBayar(statusBaru)}</b>
         </p>
 
         <div className="actions">
@@ -318,13 +345,14 @@ function PesananPage({ onChange }: { onChange: () => void }) {
             <tr>
               <th>Kode</th><th>Pelanggan</th><th>Layanan</th><th>Berat</th><th>Total</th>
               <th>Status</th><th>Status Bayar</th><th>Metode</th><th>Dibayar</th><th>Sisa Tagihan</th>
-              <th>Masuk</th><th>Catatan</th><th>Aksi</th>
+              <th>Tgl Bayar</th><th>Masuk</th><th>Catatan</th><th>Aksi</th>
             </tr>
           </thead>
           <tbody>
             {data?.map((p) => {
               const dibayar = p.jumlah_dibayar ?? 0;
               const sisa = Math.max(p.total_harga - dibayar, 0);
+              const tglBayar = (p as PesananRow).tanggal_pelunasan;
               return (
                 <tr key={p.id}>
                   <td>{p.kode}</td>
@@ -337,10 +365,11 @@ function PesananPage({ onChange }: { onChange: () => void }) {
                       {STATUS.map((s) => <option key={s}>{s}</option>)}
                     </select>
                   </td>
-                  <td>{p.status_bayar ?? 'Belum Bayar'}</td>
+                  <td>{labelBayar(p.status_bayar)}</td>
                   <td>{p.metode_bayar || '-'}</td>
                   <td>{dibayar > 0 ? rupiah(dibayar) : '-'}</td>
                   <td>{rupiah(sisa)}</td>
+                  <td>{tglBayar || '-'}</td>
                   <td>{p.tanggal_masuk}</td>
                   <td>{p.catatan || '-'}</td>
                   <td className="actions">
@@ -350,7 +379,7 @@ function PesananPage({ onChange }: { onChange: () => void }) {
                 </tr>
               );
             })}
-            {data?.length === 0 && <tr><td colSpan={13} className="muted">Tidak ada pesanan</td></tr>}
+            {data?.length === 0 && <tr><td colSpan={14} className="muted">Tidak ada pesanan</td></tr>}
           </tbody>
         </table>
       </div>

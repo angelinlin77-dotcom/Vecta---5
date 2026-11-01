@@ -7,7 +7,7 @@ const TABLES = {
 };
 const PESANAN_COLS = [
   'pelanggan_id', 'layanan_id', 'berat_kg', 'total_harga', 'status',
-  'status_bayar', 'metode_bayar', 'jumlah_dibayar',
+  'status_bayar', 'metode_bayar', 'jumlah_dibayar', 'tanggal_pelunasan',
   'tanggal_masuk', 'catatan',
 ];
 const PESANAN_SQL = `
@@ -19,6 +19,20 @@ const PESANAN_SQL = `
 const table = (name) => {
   if (!TABLES[name]) throw new Error(`Tabel tidak dikenal: ${name}`);
   return TABLES[name];
+};
+
+// Menambah kolom tanggal_pelunasan ke tabel pesanan kalau belum ada (hanya sekali).
+let kolomSiap = null;
+const pastikanKolom = () => {
+  if (!kolomSiap) {
+    kolomSiap = (async () => {
+      const cols = await dbAll('PRAGMA table_info(pesanan)');
+      if (cols.length && !cols.some((c) => c.name === 'tanggal_pelunasan')) {
+        await dbRun('ALTER TABLE pesanan ADD COLUMN tanggal_pelunasan TEXT');
+      }
+    })().catch((e) => { kolomSiap = null; throw e; });
+  }
+  return kolomSiap;
 };
 
 /* =============== Pelanggan dan Layanan =============== */
@@ -61,7 +75,8 @@ const countPesananUsing = async (name, id) => {
 };
 
 /* =============== Pesanan =============== */
-const findAllPesanan = ({ status, pelanggan_id, q } = {}) => {
+const findAllPesanan = async ({ status, pelanggan_id, q } = {}) => {
+  await pastikanKolom();
   const where = [];
   const args = [];
   if (status) { where.push('p.status = ?'); args.push(status); }
@@ -74,19 +89,27 @@ const findAllPesanan = ({ status, pelanggan_id, q } = {}) => {
   return dbAll(`${PESANAN_SQL} ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY p.id DESC`, args);
 };
 
-const findPesananById = (id) => dbGet(`${PESANAN_SQL} WHERE p.id = ?`, [id]);
+const findPesananById = async (id) => {
+  await pastikanKolom();
+  return dbGet(`${PESANAN_SQL} WHERE p.id = ?`, [id]);
+};
 
 const createPesanan = async (row) => {
+  await pastikanKolom();
   const { lastID } = await dbRun(
     `INSERT INTO pesanan (${PESANAN_COLS.join(', ')}) VALUES (${PESANAN_COLS.map(() => '?').join(', ')})`,
-    PESANAN_COLS.map((c) => row[c]),
+    PESANAN_COLS.map((c) => row[c] ?? null),
   );
   await dbRun('UPDATE pesanan SET kode = ? WHERE id = ?', [`LDR-${String(lastID).padStart(4, '0')}`, lastID]);
   return findPesananById(lastID);
 };
 
 const updatePesanan = async (id, row) => {
-  await dbRun(`UPDATE pesanan SET ${PESANAN_COLS.map((c) => `${c} = ?`).join(', ')} WHERE id = ?`, [...PESANAN_COLS.map((c) => row[c]), id]);
+  await pastikanKolom();
+  await dbRun(
+    `UPDATE pesanan SET ${PESANAN_COLS.map((c) => `${c} = ?`).join(', ')} WHERE id = ?`,
+    [...PESANAN_COLS.map((c) => row[c] ?? null), id],
+  );
   return findPesananById(id);
 };
 

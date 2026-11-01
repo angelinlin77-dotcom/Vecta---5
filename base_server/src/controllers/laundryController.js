@@ -10,6 +10,9 @@ class HttpError extends Error {
 const bad = (error) => new HttpError(400, 'Validasi gagal', error);
 const notFound = (what) => new HttpError(404, `${what} tidak ditemukan`);
 
+// Tanggal hari ini (YYYY-MM-DD) menurut jam komputer server
+const hariIni = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+
 // Bungkus handler: hasilnya [kode, data, pesan]; HttpError jadi respons gagal.
 const handle = (fn) => async (req, res) => {
   try {
@@ -70,12 +73,27 @@ const crud = (name) => ({
   }),
 });
 
-/* Pesanan: total_harga dihitung server dari berat x harga layanan */
-const pesananBody = async (b) => {
+/*
+  Pesanan: total_harga dihitung server dari berat x harga layanan.
+
+  Pembayaran bersifat BERTAHAP:
+  - jumlah_dibayar di database = total yang SUDAH dibayar (akumulasi).
+  - Nilai yang dikirim dari form ("Bayar sekarang") dianggap pembayaran BARU
+    (field `bayar_sekarang`, atau `jumlah_dibayar` sebagai cadangan) dan
+    DITAMBAHKAN ke pembayaran sebelumnya, bukan menimpa.
+  - status_bayar dihitung otomatis oleh server.
+  - Jika status_bayar = 'Lunas' dikirim, server membayar seluruh sisa tagihan.
+  - tanggal_pelunasan (tampil sebagai "Tgl Bayar") = tanggal pembayaran terakhir.
+    Diisi tanggal hari ini setiap ada pembayaran baru (lunas maupun belum lunas),
+    tidak berubah kalau disimpan tanpa pembayaran baru.
+
+  `existing` = data pesanan lama saat update (null saat create).
+*/
+const pesananBody = async (b, existing = null) => {
   const pelanggan_id = num(b.pelanggan_id, 'pelanggan_id', { min: 1, int: true });
   const layanan_id = num(b.layanan_id, 'layanan_id', { min: 1, int: true });
   const berat_kg = num(b.berat_kg, 'berat_kg', { gt: true });
-  const status = b.status ?? 'Diterima';
+  const status = b.status ?? existing?.status ?? 'Diterima';
   if (!STATUS.includes(status)) throw bad(`status harus salah satu dari: ${STATUS.join(', ')}`);
   if (!(await m.findById('pelanggan', pelanggan_id))) throw bad('pelanggan_id tidak ditemukan');
   const lay = await m.findById('layanan', layanan_id);
@@ -83,27 +101,49 @@ const pesananBody = async (b) => {
 
   const total_harga = Math.round(berat_kg * lay.harga_per_kg);
 
-  // Pembayaran
-  const status_bayar = b.status_bayar ?? 'Belum Bayar';
-  if (!STATUS_BAYAR.includes(status_bayar)) throw bad(`status_bayar harus salah satu dari: ${STATUS_BAYAR.join(', ')}`);
+  // ---- Pembayaran ----
+  const dibayar_sebelumnya = Math.min(Number(existing?.jumlah_dibayar) || 0, total_harga);
+  const sisa_saat_ini = total_harga - dibayar_sebelumnya;
 
-  let metode_bayar = '';
-  let jumlah_dibayar = 0;
-  if (status_bayar !== 'Belum Bayar') {
+  if (b.status_bayar !== undefined && !STATUS_BAYAR.includes(b.status_bayar)) {
+    throw bad(`status_bayar harus salah satu dari: ${STATUS_BAYAR.join(', ')}`);
+  }
+
+  // Berapa yang dibayar SEKARANG
+  let bayar_sekarang = 0;
+  if (b.status_bayar === 'Lunas') {
+    bayar_sekarang = sisa_saat_ini; // lunasi seluruh sisa
+  } else {
+    const raw = b.bayar_sekarang ?? b.jumlah_dibayar;
+    const kosong = raw === undefined || raw === null || raw === '';
+    if (!kosong) bayar_sekarang = num(raw, 'bayar_sekarang', { min: 0, int: true });
+  }
+  if (bayar_sekarang > sisa_saat_ini) {
+    throw bad(`pembayaran (${bayar_sekarang}) melebihi sisa tagihan (${sisa_saat_ini})`);
+  }
+
+  // Metode bayar: wajib kalau ada pembayaran baru, kalau tidak pakai yang lama
+  let metode_bayar = existing?.metode_bayar ?? '';
+  if (bayar_sekarang > 0) {
     metode_bayar = text(b.metode_bayar, 'metode_bayar');
     if (!METODE_BAYAR.includes(metode_bayar)) throw bad(`metode_bayar harus salah satu dari: ${METODE_BAYAR.join(', ')}`);
   }
-  if (status_bayar === 'Lunas') jumlah_dibayar = total_harga;
-  if (status_bayar === 'DP') {
-    jumlah_dibayar = num(b.jumlah_dibayar, 'jumlah_dibayar', { min: 0, gt: true, int: true });
-    if (jumlah_dibayar >= total_harga) throw bad('jumlah DP harus kurang dari total harga');
-  }
+
+  const jumlah_dibayar = dibayar_sebelumnya + bayar_sekarang;
+  const sisa_tagihan = total_harga - jumlah_dibayar;
+  const status_bayar = sisa_tagihan === 0 && total_harga > 0 ? 'Lunas' : jumlah_dibayar > 0 ? 'DP' : 'Belum Bayar';
+  if (status_bayar === 'Belum Bayar') metode_bayar = '';
+
+  // Tanggal bayar: hari ini kalau ada pembayaran baru, kalau tidak pertahankan yang lama
+  let tanggal_pelunasan = existing?.tanggal_pelunasan ?? null;
+  if (bayar_sekarang > 0) tanggal_pelunasan = hariIni();
+  if (status_bayar === 'Belum Bayar') tanggal_pelunasan = null;
 
   return {
     pelanggan_id, layanan_id, berat_kg, status,
     total_harga,
-    status_bayar, metode_bayar, jumlah_dibayar,
-    tanggal_masuk: text(b.tanggal_masuk, 'tanggal_masuk', false) || new Date().toISOString().slice(0, 10),
+    status_bayar, metode_bayar, jumlah_dibayar, tanggal_pelunasan,
+    tanggal_masuk: text(b.tanggal_masuk, 'tanggal_masuk', false) || existing?.tanggal_masuk || hariIni(),
     catatan: text(b.catatan, 'catatan', false),
   };
 };
@@ -118,8 +158,9 @@ const pesanan = {
   create: handle(async (req) => [201, await m.createPesanan(await pesananBody(req.body)), 'Pesanan dibuat']),
   update: handle(async (req) => {
     const i = id(req);
-    const row = await pesananBody(req.body);
-    if (!(await m.findPesananById(i))) throw notFound('Pesanan');
+    const existing = await m.findPesananById(i);
+    if (!existing) throw notFound('Pesanan');
+    const row = await pesananBody(req.body, existing);
     return [200, await m.updatePesanan(i, row), 'Pesanan diperbarui'];
   }),
   setStatus: handle(async (req) => {
