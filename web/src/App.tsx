@@ -2,6 +2,43 @@ import { FormEvent, ReactNode, useCallback, useEffect, useState } from 'react';
 import { api, rupiah } from './api';
 import { Dashboard, Layanan, Pelanggan, Pesanan, STATUS, Status, METODE_BAYAR, StatusBayar } from './types';
 
+// ===== Jam & tanggal berjalan (WIB) =====
+const formatTanggal = new Intl.DateTimeFormat('id-ID', {
+  weekday: 'long',
+  day: 'numeric',
+  month: 'long',
+  year: 'numeric',
+  timeZone: 'Asia/Jakarta',
+});
+
+const formatJam = new Intl.DateTimeFormat('id-ID', {
+  hour: '2-digit',
+  minute: '2-digit',
+  timeZone: 'Asia/Jakarta',
+});
+
+function LiveClock() {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  return (
+    <p className="live-clock">
+      {formatTanggal.format(now)} · {formatJam.format(now)} WIB
+    </p>
+  );
+}
+
+function PageTitle({ children }: { children: ReactNode }) {
+  return (
+    <div className="page-title">
+      <h2>{children}</h2>
+      <LiveClock />
+    </div>
+  );
+}
+
 function useData<T>(path: string) {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState('');
@@ -98,7 +135,7 @@ function CrudPage<T extends { id: number; nama: string }>(props: {
 
   return (
     <section>
-      <h2>{title}</h2>
+      <PageTitle>{title}</PageTitle>
       <form className="form" onSubmit={submit}>
         {fields.map((f) => (
           <label key={f.key}>
@@ -216,13 +253,9 @@ function PesananPage({ onChange }: { onChange: () => void }) {
       bayar_sekarang: bayar,
     };
     try {
-      const hasil = (editId === null
-        ? await api.post<Pesanan>('/pesanan', body)
-        : await api.put<Pesanan>(`/pesanan/${editId}`, body)) as PesananRow;
-      done(
-        (editId === null ? 'Pesanan ditambahkan' : 'Pesanan diperbarui') +
-        ` | tgl bayar tersimpan: ${hasil?.tanggal_pelunasan ?? 'KOSONG'}`,
-      );
+      if (editId === null) await api.post<Pesanan>('/pesanan', body);
+      else await api.put<Pesanan>(`/pesanan/${editId}`, body);
+      done(editId === null ? 'Pesanan ditambahkan' : 'Pesanan diperbarui');
       reset();
     } catch (x) {
       console.error('Simpan gagal:', x);
@@ -259,7 +292,7 @@ function PesananPage({ onChange }: { onChange: () => void }) {
 
   return (
     <section>
-      <h2>Pesanan</h2>
+      <PageTitle>Pesanan</PageTitle>
       {msg && <p className="ok">{msg}</p>}
       {err && <p className="alert">{err}</p>}
       <form className="form" onSubmit={submit}>
