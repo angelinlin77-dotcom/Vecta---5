@@ -1,4 +1,4 @@
-import { FormEvent, ReactNode, useCallback, useEffect, useState } from 'react';
+import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import { api, rupiah } from './api';
 import { Dashboard, Layanan, Pelanggan, Pesanan, STATUS, Status, METODE_BAYAR, StatusBayar } from './types';
 
@@ -420,6 +420,381 @@ function PesananPage({ onChange }: { onChange: () => void }) {
   );
 }
 
+// ===== Halaman Pelanggan =====
+const formatTglPendek = new Intl.DateTimeFormat('id-ID', {
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+  timeZone: 'Asia/Jakarta',
+});
+
+const digitsOnly = (s: string) => s.replace(/\D/g, '');
+
+// 081234567801 -> 0812-3456-7801
+const formatWa = (s: string) => {
+  const d = digitsOnly(s);
+  return [d.slice(0, 4), d.slice(4, 8), d.slice(8)].filter(Boolean).join('-');
+};
+
+// Mengembalikan pesan galat, atau '' bila nomor valid (10-13 digit)
+function cekWa(s: string): string {
+  const v = s.trim();
+  if (!v) return 'Nomor WhatsApp wajib diisi.';
+  if (/[^\d\s\-+]/.test(v)) return 'Nomor hanya boleh berisi angka.';
+  const n = digitsOnly(v).length;
+  if (n < 10) return 'Nomor terlalu pendek. Gunakan 10 sampai 13 digit, contoh 0812-3456-7890.';
+  if (n > 13) return 'Nomor terlalu panjang. Gunakan 10 sampai 13 digit, contoh 0812-3456-7890.';
+  return '';
+}
+
+interface PelangganRow extends Pelanggan {
+  jumlah: number;
+  total: number;
+  terakhir: Date | null;
+  waValid: boolean;
+}
+
+type SortKey = 'terakhir' | 'nama' | 'total' | 'pesanan';
+
+const emptyPelanggan = { nama: '', telepon: '', alamat: '' };
+
+function PelangganPage({ version, onChange }: { version: number; onChange: () => void }) {
+  const pel = useData<Pelanggan[]>('/pelanggan');
+  const pes = useData<Pesanan[]>(`/pesanan?v=${version}`);
+
+  const [q, setQ] = useState('');
+  const [sort, setSort] = useState<SortKey>('terakhir');
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [editId, setEditId] = useState<number | null>(null);
+  const [form, setForm] = useState(emptyPelanggan);
+  const [submitted, setSubmitted] = useState(false);
+  const [riwayat, setRiwayat] = useState<Pelanggan | null>(null);
+  const [msg, setMsg] = useState('');
+  const [err, setErr] = useState('');
+
+  // Gabungkan pelanggan dengan ringkasan pesanannya
+  const rows: PelangganRow[] = useMemo(() => {
+    const pesanan = pes.data ?? [];
+    return (pel.data ?? []).map((p) => {
+      const milik = pesanan.filter((o) => o.pelanggan_id === p.id);
+      let terakhir: Date | null = null;
+      for (const o of milik) {
+        const t = new Date(String(o.tanggal_masuk).replace(' ', 'T'));
+        if (!Number.isNaN(t.getTime()) && (!terakhir || t > terakhir)) terakhir = t;
+      }
+      return {
+        ...p,
+        jumlah: milik.length,
+        total: milik.reduce((sum, o) => sum + (o.total_harga ?? 0), 0),
+        terakhir,
+        waValid: cekWa(p.telepon) === '',
+      };
+    });
+  }, [pel.data, pes.data]);
+
+  // Kartu ringkasan
+  const now = Date.now();
+  const aktif = rows.filter((r) => r.terakhir && now - r.terakhir.getTime() <= 30 * 86400000).length;
+  const belum = rows.filter((r) => r.jumlah === 0);
+  const tidakValid = rows.filter((r) => !r.waValid);
+  const namaBelum = belum.slice(0, 2).map((r) => r.nama).join(', ') + (belum.length > 2 ? ', dll' : '');
+
+  // Cari + urutkan
+  const shown = useMemo(() => {
+    const kw = q.trim().toLowerCase();
+    const kwDigits = digitsOnly(kw);
+    return rows
+      .filter(
+        (r) =>
+          !kw ||
+          r.nama.toLowerCase().includes(kw) ||
+          (kwDigits !== '' && digitsOnly(r.telepon).includes(kwDigits)),
+      )
+      .sort((a, b) => {
+        if (sort === 'nama') return a.nama.localeCompare(b.nama, 'id');
+        if (sort === 'total') return b.total - a.total;
+        if (sort === 'pesanan') return b.jumlah - a.jumlah;
+        return (b.terakhir?.getTime() ?? -1) - (a.terakhir?.getTime() ?? -1) || a.nama.localeCompare(b.nama, 'id');
+      });
+  }, [rows, q, sort]);
+
+  // Validasi form
+  const waErr = cekWa(form.telepon);
+  const formDigits = digitsOnly(form.telepon);
+  const duplikat = formDigits
+    ? rows.find((r) => r.id !== editId && digitsOnly(r.telepon) === formDigits)
+    : undefined;
+  const waMsg =
+    form.telepon || submitted
+      ? waErr || (duplikat ? `Nomor sudah terdaftar atas nama ${duplikat.nama}.` : '')
+      : '';
+  const namaMsg = submitted && !form.nama.trim() ? 'Nama lengkap wajib diisi.' : '';
+
+  const closePanel = () => {
+    setPanelOpen(false);
+    setEditId(null);
+    setForm(emptyPelanggan);
+    setSubmitted(false);
+  };
+
+  const openTambah = () => {
+    setEditId(null);
+    setForm(emptyPelanggan);
+    setSubmitted(false);
+    setMsg('');
+    setErr('');
+    setPanelOpen(true);
+  };
+
+  const openEdit = (r: PelangganRow) => {
+    setEditId(r.id);
+    setForm({ nama: r.nama, telepon: r.telepon, alamat: r.alamat ?? '' });
+    setSubmitted(false);
+    setMsg('');
+    setErr('');
+    setPanelOpen(true);
+  };
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    setSubmitted(true);
+    if (!form.nama.trim() || waErr || duplikat) return;
+    const body = { nama: form.nama.trim(), telepon: form.telepon.trim(), alamat: form.alamat.trim() };
+    try {
+      if (editId === null) await api.post('/pelanggan', body);
+      else await api.put(`/pelanggan/${editId}`, body);
+      setMsg(editId === null ? 'Pelanggan ditambahkan' : 'Pelanggan diperbarui');
+      setErr('');
+      closePanel();
+      pel.reload();
+      onChange();
+    } catch (x) {
+      setErr((x as Error).message);
+      setMsg('');
+    }
+  }
+
+  async function remove(r: PelangganRow) {
+    if (!confirm(`Hapus pelanggan ${r.nama}?`)) return;
+    try {
+      await api.del(`/pelanggan/${r.id}`);
+      setMsg('Pelanggan dihapus');
+      setErr('');
+      pel.reload();
+      onChange();
+    } catch (x) {
+      setErr((x as Error).message);
+      setMsg('');
+    }
+  }
+
+  const riwayatPesanan = riwayat
+    ? (pes.data ?? [])
+        .filter((o) => o.pelanggan_id === riwayat.id)
+        .sort((a, b) => String(b.tanggal_masuk).localeCompare(String(a.tanggal_masuk)))
+    : [];
+
+  return (
+    <section className="pel">
+      <div className="pel-head">
+        <div>
+          <h2>Pelanggan</h2>
+          <p className="pel-sub">Data kontak dan riwayat transaksi setiap pelanggan</p>
+          <LiveClock />
+        </div>
+        <button type="button" className="pel-btn" onClick={openTambah}>+ Tambah Pelanggan</button>
+      </div>
+
+      {msg && <p className="ok">{msg}</p>}
+      {err && <p className="alert">{err}</p>}
+      <Notice error={pel.error || pes.error} loading={pel.loading && !pel.data} />
+
+      <div className="pel-stats">
+        <div className="pel-stat">
+          <span>Total pelanggan</span>
+          <b>{rows.length}</b>
+          <small>terdaftar di sistem</small>
+        </div>
+        <div className="pel-stat">
+          <span>Aktif 30 hari terakhir</span>
+          <b>{aktif}</b>
+          <small>punya minimal 1 pesanan</small>
+        </div>
+        <div className="pel-stat">
+          <span>Belum pernah transaksi</span>
+          <b>{belum.length}</b>
+          <small>{belum.length ? namaBelum : 'semua sudah bertransaksi'}</small>
+        </div>
+        <div className="pel-stat warn">
+          <span>Data perlu dicek</span>
+          <b>{tidakValid.length}</b>
+          <small>nomor WhatsApp tidak valid</small>
+        </div>
+      </div>
+
+      <div className={panelOpen ? 'pel-body with-panel' : 'pel-body'}>
+        <div className="pel-main">
+          <div className="pel-toolbar">
+            <input
+              placeholder="Cari nama atau no. WhatsApp"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+            />
+            <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)}>
+              <option value="terakhir">Urutkan: terakhir datang</option>
+              <option value="nama">Urutkan: nama A-Z</option>
+              <option value="total">Urutkan: total belanja</option>
+              <option value="pesanan">Urutkan: jumlah pesanan</option>
+            </select>
+          </div>
+
+          <div className="pel-tablewrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Pelanggan</th>
+                  <th>No. WhatsApp</th>
+                  <th>Pesanan</th>
+                  <th>Total belanja</th>
+                  <th>Terakhir datang</th>
+                  <th className="right">Aksi</th>
+                </tr>
+              </thead>
+              <tbody>
+                {shown.map((r) => (
+                  <tr key={r.id} className={r.waValid ? '' : 'warn'}>
+                    <td className="nama">
+                      <div className="pel-person">
+                        <span className={`pel-avatar av${r.id % 5}`} aria-hidden="true">
+                          {r.nama.trim().charAt(0).toUpperCase() || '?'}
+                        </span>
+                        <div>
+                          <b>{r.nama}</b>
+                          <small>{r.alamat || '-'}</small>
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      {formatWa(r.telepon) || '-'}
+                      {!r.waValid && <span className="pel-badge">Tidak valid</span>}
+                    </td>
+                    <td><span className={r.jumlah ? 'pel-count' : 'pel-count zero'}>{r.jumlah}</span></td>
+                    <td><b>{rupiah(r.total)}</b></td>
+                    <td className="muted">{r.terakhir ? formatTglPendek.format(r.terakhir) : 'Belum pernah'}</td>
+                    <td>
+                      <div className="pel-actions">
+                        {r.jumlah > 0 && (
+                          <button type="button" className="pel-outline" onClick={() => setRiwayat(r)}>Riwayat</button>
+                        )}
+                        <button type="button" className="pel-ghost" onClick={() => openEdit(r)}>Edit</button>
+                        {r.jumlah === 0 && (
+                          <button type="button" className="pel-del" onClick={() => remove(r)}>Hapus</button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {shown.length === 0 && (
+                  <tr><td colSpan={6} className="muted">{rows.length ? 'Tidak ada pelanggan yang cocok' : 'Belum ada data'}</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <p className="pel-note">
+            <span aria-hidden="true">ⓘ</span>
+            Tombol Hapus hanya muncul untuk pelanggan tanpa pesanan. Pelanggan yang sudah bertransaksi
+            tidak bisa dihapus supaya riwayatnya tetap utuh.
+          </p>
+        </div>
+
+        {panelOpen && (
+          <form className="pel-panel" onSubmit={submit} noValidate>
+            <div className="pel-panel-head">
+              <h3>{editId === null ? 'Tambah Pelanggan' : 'Edit Pelanggan'}</h3>
+              <button type="button" className="pel-ghost pel-x" aria-label="Tutup" onClick={closePanel}>✕</button>
+            </div>
+
+            <label>
+              <span>Nama lengkap <i>*</i></span>
+              <input
+                autoFocus
+                className={namaMsg ? 'bad' : ''}
+                placeholder="Contoh: Dina Lestari"
+                value={form.nama}
+                onChange={(e) => setForm({ ...form, nama: e.target.value })}
+              />
+              {namaMsg && <em>{namaMsg}</em>}
+            </label>
+
+            <label>
+              <span>No. WhatsApp <i>*</i></span>
+              <input
+                inputMode="tel"
+                className={waMsg ? 'bad' : ''}
+                placeholder="0812-3456-7890"
+                value={form.telepon}
+                onChange={(e) => setForm({ ...form, telepon: e.target.value })}
+              />
+              {waMsg && <em>{waMsg}</em>}
+            </label>
+
+            <label>
+              <span>Alamat <small>(opsional, wajib bila antar jemput)</small></span>
+              <textarea
+                rows={3}
+                placeholder="Nama jalan, nomor, kelurahan, kota"
+                value={form.alamat}
+                onChange={(e) => setForm({ ...form, alamat: e.target.value })}
+              />
+            </label>
+
+            <p className="pel-info">
+              Sistem otomatis mengecek nomor yang sudah terdaftar supaya tidak ada pelanggan ganda.
+            </p>
+
+            <div className="pel-panel-actions">
+              <button type="button" className="pel-ghost" onClick={closePanel}>Batal</button>
+              <button type="submit" className="pel-btn">Simpan</button>
+            </div>
+          </form>
+        )}
+      </div>
+
+      {riwayat && (
+        <div className="pel-modal-bg" onClick={() => setRiwayat(null)}>
+          <div className="pel-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+            <div className="pel-panel-head">
+              <h3>Riwayat {riwayat.nama}</h3>
+              <button type="button" className="pel-ghost pel-x" aria-label="Tutup" onClick={() => setRiwayat(null)}>✕</button>
+            </div>
+            <div className="pel-tablewrap">
+              <table>
+                <thead>
+                  <tr><th>Kode</th><th>Layanan</th><th>Berat</th><th>Total</th><th>Status</th><th>Status bayar</th><th>Masuk</th></tr>
+                </thead>
+                <tbody>
+                  {riwayatPesanan.map((o) => (
+                    <tr key={o.id}>
+                      <td>{o.kode}</td>
+                      <td>{o.layanan_nama}</td>
+                      <td>{o.berat_kg} kg</td>
+                      <td>{rupiah(o.total_harga)}</td>
+                      <td>{o.status}</td>
+                      <td>{labelBayar(o.status_bayar)}</td>
+                      <td>{o.tanggal_masuk}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 const TABS = ['Pesanan', 'Pelanggan', 'Layanan'] as const;
 
 export default function App() {
@@ -437,25 +812,9 @@ export default function App() {
           ))}
         </nav>
       </header>
-      <DashboardCards version={version} />
+      {tab !== 'Pelanggan' && <DashboardCards version={version} />}
       {tab === 'Pesanan' && <PesananPage onChange={refresh} />}
-      {tab === 'Pelanggan' && (
-        <CrudPage<Pelanggan>
-          title="Pelanggan"
-          path="/pelanggan"
-          onChange={refresh}
-          fields={[
-            { key: 'nama', label: 'Nama', type: 'text', required: true },
-            { key: 'telepon', label: 'Telepon', type: 'text', required: true },
-            { key: 'alamat', label: 'Alamat', type: 'text' },
-          ]}
-          columns={[
-            { label: 'Nama', render: (r) => r.nama },
-            { label: 'Telepon', render: (r) => r.telepon },
-            { label: 'Alamat', render: (r) => r.alamat },
-          ]}
-        />
-      )}
+      {tab === 'Pelanggan' && <PelangganPage version={version} onChange={refresh} />}
       {tab === 'Layanan' && (
         <CrudPage<Layanan>
           title="Layanan"
