@@ -987,28 +987,87 @@ function LayananPage({ version, onChange }: { version: number; onChange: () => v
 
 const TABS = ['Pesanan', 'Pelanggan', 'Layanan'] as const;
 
+// Gelembung di hero banner
+const BUBBLES = Array.from({ length: 24 }, (_, i) => ({
+  x: `${(i * 37) % 96 + 2}%`,       // posisi horizontal
+  s: 28 + ((i * 23) % 76),          // ukuran 28-104 px
+  d: 9 + ((i * 7) % 10),            // durasi naik 9-18 detik
+  w: 3 + ((i * 3) % 4),             // durasi goyang 3-6 detik
+  t: -((i * 5) % 14),               // delay negatif: langsung terlihat saat dibuka
+}));
+
+// Gelembung latar belakang seluruh halaman
+const BG_BUBBLES = Array.from({ length: 30 }, (_, i) => ({
+  x: `${(i * 31) % 97 + 1}%`,
+  s: 30 + ((i * 29) % 110),         // ukuran 30-140 px
+  d: 16 + ((i * 5) % 16),           // naik 16-31 detik
+  w: 4 + ((i * 3) % 5),             // goyang 4-8 detik
+  t: -((i * 7) % 30),               // delay negatif: langsung ramai saat dibuka
+}));
+
 export default function App() {
   const [tab, setTab] = useState<(typeof TABS)[number]>('Pesanan');
   const [version, setVersion] = useState(0);
   const refresh = () => setVersion((v) => v + 1);
 
   return (
-    <main>
-      <header>
-        <div className="brand">
-          <img src="/logo.png" alt="Milky Wash" className="logo" />
-          <h1>Milky Wash</h1>
-        </div>
+    <>
+      <div className="bg-bubbles" aria-hidden="true">
+        {BG_BUBBLES.map((b, i) => (
+          <span
+            key={i}
+            className="bubble"
+            style={{
+              left: b.x,
+              width: b.s,
+              height: b.s,
+              animationDuration: `${b.d}s, ${b.w}s`,
+              animationDelay: `${b.t}s, ${b.t}s`,
+            }}
+          />
+        ))}
+      </div>
+
+      <header className="topbar">
+        <h1 className="brand-title">Milky Wash</h1>
         <nav>
           {TABS.map((t) => (
             <button key={t} className={t === tab ? 'tab active' : 'tab'} onClick={() => setTab(t)}>{t}</button>
           ))}
         </nav>
       </header>
-      {tab === 'Pesanan' && <DashboardCards version={version} />}
-      {tab === 'Pesanan' && <PesananPage onChange={refresh} />}
-      {tab === 'Pelanggan' && <PelangganPage version={version} onChange={refresh} />}
-      {tab === 'Layanan' && <LayananPage version={version} onChange={refresh} />}
-    </main>
+
+      <main>
+        {tab === 'Pesanan' && (
+          <section className="hero">
+            {BUBBLES.map((b, i) => (
+              <span
+                key={i}
+                className="bubble"
+                style={{
+                  left: b.x,
+                  width: b.s,
+                  height: b.s,
+                  animationDuration: `${b.d}s, ${b.w}s`,
+                  animationDelay: `${b.t}s, ${b.t}s`,
+                }}
+              />
+            ))}
+            <div className="hero-text">
+              <h2 className="hero-title">
+                Welcome<br />to<br /><span>Milky Wash</span>
+              </h2>
+            </div>
+            <div className="hero-art">
+              <img className="hero-img" src="/logo.png" alt="Milky Wash" />
+            </div>
+          </section>
+        )}
+        {tab === 'Pesanan' && <DashboardCards version={version} />}
+        {tab === 'Pesanan' && <PesananPage onChange={refresh} />}
+        {tab === 'Pelanggan' && <PelangganPage version={version} onChange={refresh} />}
+        {tab === 'Layanan' && <LayananPage version={version} onChange={refresh} />}
+      </main>
+    </>
   );
 }
