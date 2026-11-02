@@ -995,7 +995,10 @@ export default function App() {
   return (
     <main>
       <header>
-        <h1>Milky Wash</h1>
+        <div className="brand">
+          <img src="/logo.png" alt="Milky Wash" className="logo" />
+          <h1>Milky Wash</h1>
+        </div>
         <nav>
           {TABS.map((t) => (
             <button key={t} className={t === tab ? 'tab active' : 'tab'} onClick={() => setTab(t)}>{t}</button>
