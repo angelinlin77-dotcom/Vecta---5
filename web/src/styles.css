@@ -654,12 +654,12 @@ tr.warn td { background: #fff9ea; }
   align-items: center;
   justify-content: center;
   background: linear-gradient(160deg, #a9bffd 0%, #93aefc 45%, #7f9cf6 100%);
-  animation: loader-fade 1.1s ease both;
+  animation: loader-fade 2s ease both;
 }
 @keyframes loader-fade {
   0%   { opacity: 0; }
-  30%  { opacity: 1; }
-  70%  { opacity: 1; }
+  25%  { opacity: 1; }
+  10%  { opacity: 1; }
   100% { opacity: 0; }
 }
 
@@ -695,7 +695,7 @@ tr.warn td { background: #fff9ea; }
   width: 300px;
   max-width: 60vw;
   filter: drop-shadow(0 18px 24px rgba(63, 81, 199, 0.4));
-  animation: loader-bounce 0.8s ease-in-out infinite;
+  animation: loader-bounce 1.4s ease-in-out infinite;
 }
 @keyframes loader-bounce {
   0%, 100% { transform: translateY(0) rotate(-3deg) scale(1); }
@@ -710,7 +710,7 @@ tr.warn td { background: #fff9ea; }
   letter-spacing: 1px;
   text-shadow: 0 3px 0 rgba(63, 81, 199, 0.35);
 }
-.loader-text span { display: inline-block; animation: dot-hop 0.9s ease-in-out infinite; }
+.loader-text span { display: inline-block; animation: dot-hop 1.4s ease-in-out infinite; }
 .loader-text span:nth-child(2) { animation-delay: 0.15s; }
 .loader-text span:nth-child(3) { animation-delay: 0.3s; }
 .loader-text span:nth-child(4) { animation-delay: 0.45s; }
@@ -737,3 +737,276 @@ tr.warn td { background: #fff9ea; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+/* ===== Tombol lebih besar + efek gelembung saat disorot ===== */
+button {
+  position: relative;
+  font-size: 1.75rem;
+  padding: 18px 42px;
+  border-radius: 18px;
+}
+.pel button { font-size: 1.5rem; padding: 16px 36px; border-radius: 16px; }
+td.actions button { font-size: 1.4rem; padding: 14px 28px; }
+.topbar button.tab { font-size: 1.65rem; padding: 16px 44px; }
+
+button::before,
+button::after {
+  content: '';
+  position: absolute;
+  bottom: 14px;
+  border-radius: 50%;
+  pointer-events: none;
+  opacity: 0;
+  background:
+    radial-gradient(circle at 30% 30%, #fff 0 18%, transparent 19%),
+    radial-gradient(circle, rgba(255, 255, 255, 0.45), rgba(147, 174, 252, 0.55));
+  border: 2px solid rgba(140, 165, 250, 0.95);
+  box-shadow: inset 0 0 8px rgba(255, 255, 255, 0.9), 0 0 10px rgba(120, 150, 255, 0.4);
+}
+button::before { left: 16%; width: 22px; height: 22px; }
+button::after  { left: 66%; width: 14px; height: 14px; }
+
+button:hover::before { animation: btn-bubble 1s ease-out infinite; }
+button:hover::after  { animation: btn-bubble 1s ease-out 0.35s infinite; }
+
+@keyframes btn-bubble {
+  0%   { transform: translateY(0) scale(0.5); opacity: 0; }
+  25%  { opacity: 1; }
+  100% { transform: translateY(-60px) scale(1.15); opacity: 0; }
+}
+/* ===== Tombol Edit (biru) & Hapus (merah) di tabel, teks putih ===== */
+td.actions button.ghost,
+.pel-actions button.pel-ghost,
+.lay-actions button.lay-outline {
+  background: linear-gradient(180deg, #5a6be6, #4a5bd8);
+  color: #fff;
+  border: 1px solid #4a5bd8;
+  box-shadow: 0 3px 8px rgba(74, 91, 216, 0.3);
+}
+td.actions button.ghost:hover,
+.pel-actions button.pel-ghost:hover,
+.lay-actions button.lay-outline:hover {
+  background: linear-gradient(180deg, #4a5bd8, #3140ae);
+  box-shadow: 0 6px 14px rgba(74, 91, 216, 0.4);
+}
+
+td.actions button.danger,
+.pel-actions button.pel-del,
+.lay-actions button.lay-del {
+  background: linear-gradient(180deg, #ef5a7c, #e0405f);
+  color: #fff;
+  border: 1px solid #e0405f;
+  box-shadow: 0 3px 8px rgba(224, 64, 95, 0.3);
+}
+td.actions button.danger:hover,
+.pel-actions button.pel-del:hover,
+.lay-actions button.lay-del:hover {
+  background: linear-gradient(180deg, #e0405f, #c42d4c);
+  box-shadow: 0 6px 14px rgba(224, 64, 95, 0.4);
+}
+/* ===== Tombol Riwayat (hijau mint), teks putih ===== */
+.pel-actions button.pel-outline {
+  background: linear-gradient(180deg, #34b995, #1a9d7c);
+  color: #fff;
+  border: 1px solid #1a9d7c;
+  box-shadow: 0 3px 8px rgba(26, 157, 124, 0.3);
+}
+.pel-actions button.pel-outline:hover {
+  background: linear-gradient(180deg, #1a9d7c, #12806364);
+  background: linear-gradient(180deg, #1a9d7c, #128063);
+  box-shadow: 0 6px 14px rgba(26, 157, 124, 0.4);
+}
+/* ===== Tombol form Pesanan, warna lebih lembut ===== */
+.form .actions button[type='submit'] {
+  background: linear-gradient(180deg, #8aa3f8, #6f88f2);
+  border: 1px solid #6f88f2;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(49, 64, 174, 0.35);
+  box-shadow: 0 4px 12px rgba(111, 136, 242, 0.3);
+}
+.form .actions button[type='submit']:hover {
+  background: linear-gradient(180deg, #7b95f5, #5f79ea);
+  box-shadow: 0 8px 18px rgba(111, 136, 242, 0.4);
+}
+
+.form .actions button.ghost {
+  background: #e3f6ee;
+  border: 1px solid #b7e6d4;
+  color: #1a8a6a;
+  box-shadow: 0 3px 8px rgba(26, 138, 106, 0.15);
+}
+.form .actions button.ghost:hover {
+  background: #d3f0e4;
+  border-color: #9ad8c0;
+  box-shadow: 0 6px 14px rgba(26, 138, 106, 0.25);
+}
+/* ===== Teks form: label semi-tebal, isian lebih ringan ===== */
+.form label,
+.lay-panel label,
+.pel-panel label {
+  font-weight: 600;
+  color: #4a5575;
+  letter-spacing: 0.2px;
+}
+
+input, select, textarea {
+  font-weight: 500;
+  color: var(--ink);
+}
+input::placeholder, textarea::placeholder {
+  font-weight: 400;
+  color: #a0a9c4;
+}
+/* Dropdown yang belum dipilih tampil pudar seperti placeholder */
+select:invalid { color: #8a94b3; font-weight: 400; }
+
+/* ===== Garis pemisah tabel lebih tebal ===== */
+.table-wrap th,
+.table-wrap td,
+.pel-tablewrap th,
+.pel-tablewrap td,
+.lay-tablewrap th,
+.lay-tablewrap td {
+  border-bottom: 2px solid #cdd6fb;
+}
+/* Garis di bawah judul kolom paling tegas */
+.table-wrap th,
+.pel-tablewrap th,
+.lay-tablewrap th {
+  border-bottom: 3px solid #93aefc;
+}
+.table-wrap th + th,
+.table-wrap td + td,
+.pel-tablewrap th + th,
+.pel-tablewrap td + td,
+.lay-tablewrap th + th,
+.lay-tablewrap td + td {
+  border-left: 1px solid #e1e7fb;
+}
+/* ===== Teks tabel lebih besar ===== */
+table { font-size: 1.4rem; }
+th { font-size: 1.15rem; }
+td { padding: 16px 16px; }
+
+/* Tabel Pelanggan disamakan dengan tabel lain */
+.pel table { font-size: 1.25rem; }
+.pel th { font-size: 1rem; padding: 14px 12px; }
+.pel td { padding: 14px 12px; }
+.pel-person small { font-size: 0.95rem; }
+.pel-badge { font-size: 0.85rem; }
+
+/* Label status (Diterima, Selesai) ikut membesar */
+.table-wrap td select { font-size: 1.15rem; padding: 6px 16px; }
+
+/* ===== Judul Dashboard ===== */
+.dash-title {
+  margin: 4px 0 18px;
+  font-family: 'Fredoka', sans-serif;
+  font-size: 3.4rem;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: 0.5px;
+  color: #5470f2;
+  -webkit-text-stroke: 6px #fff;
+  paint-order: stroke fill;
+  filter: drop-shadow(0 4px 8px rgba(63, 81, 199, 0.25));
+}
+/* ===== Perbesar teks yang masih kecil ===== */
+
+/* Halaman Pesanan */
+.page-title h2 { font-size: 2.4rem; }
+.live-clock { font-size: 1.1rem; }
+.card span { font-size: 1.2rem; }
+.card b { font-size: 2.2rem; }
+.form label { font-size: 1.2rem; }
+.form .muted { font-size: 1.25rem; }
+.filters input, .filters select { font-size: 1.25rem; }
+
+/* Halaman Pelanggan */
+.pel-head h2 { font-size: 2.2rem; }
+.pel-sub { font-size: 1.1rem; }
+.pel-head .live-clock { font-size: 1.05rem; }
+.pel-stat span { font-size: 1.1rem; }
+.pel-stat b { font-size: 2rem; }
+.pel-stat small { font-size: 0.95rem; }
+.pel-toolbar input, .pel-toolbar select { font-size: 1.15rem; }
+.pel-note, .pel-info { font-size: 1rem; }
+.pel-panel-head h3 { font-size: 1.4rem; }
+.pel-panel label { font-size: 1.1rem; }
+.pel-panel input, .pel-panel textarea { font-size: 1.15rem; }
+.pel-panel em { font-size: 0.95rem; }
+.pel-badge { font-size: 0.85rem; }
+.pel-person small { font-size: 0.95rem; }
+
+/* Halaman Layanan */
+.lay-sub { font-size: 1.2rem; }
+.lay-note { font-size: 1.05rem; }
+.lay-head .live-clock { font-size: 1.1rem; }
+.lay-panel em { font-size: 1.05rem; }
+
+/* ===== Samakan dengan gaya judul Dashboard ===== */
+
+/* Judul halaman: Pesanan, Pelanggan, Layanan */
+.page-title h2,
+.pel-head h2,
+.lay-head h2 {
+  margin: 4px 0 10px;
+  font-family: 'Fredoka', sans-serif;
+  font-size: 3.4rem;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: 0.5px;
+  color: #5470f2;
+  -webkit-text-stroke: 6px #fff;
+  paint-order: stroke fill;
+  filter: drop-shadow(0 4px 8px rgba(63, 81, 199, 0.25));
+}
+
+/* Teks kecil: jenis huruf dan warna senada, tanpa garis tepi */
+.card span,
+.pel-stat span,
+.form label,
+.lay-panel label,
+.pel-panel label,
+.pel-panel-head h3,
+.lay-panel-head h3 {
+  font-family: 'Fredoka', sans-serif;
+  font-weight: 500;
+  color: #5470f2;
+  letter-spacing: 0.3px;
+}
+/* ===== Tab header: saat disorot jadi tombol biru, teks putih ===== */
+.topbar button.tab:not(.active):hover {
+  background: linear-gradient(180deg, #5a6be6, #3f51c7);
+  color: #fff;
+  box-shadow: 0 6px 14px rgba(49, 64, 174, 0.4);
+}
+/* ===== Panel samping kanan (Edit/Tambah Pelanggan & Layanan) lebih besar ===== */
+@media (min-width: 1001px) {
+  .pel-body.with-panel { grid-template-columns: 1fr 760px; }
+  .lay-body.with-panel { grid-template-columns: 1fr 760px; }
+}
+
+.pel-panel, .lay-panel { padding: 40px; gap: 26px; }
+
+.pel-panel-head h3,
+.lay-panel-head h3 { font-size: 2.6rem; white-space: nowrap; }
+
+.pel-panel label,
+.lay-panel label { font-size: 1.6rem; }
+.pel-panel label small { font-size: 1.3rem; }
+
+.pel-panel input,
+.pel-panel textarea,
+.lay-panel input { font-size: 1.65rem; padding: 18px 22px; }
+
+.pel-panel em,
+.lay-panel em { font-size: 1.35rem; }
+.pel-info { font-size: 1.35rem; padding: 18px 20px; }
+
+/* Tombol silang penutup panel */
+.pel .pel-panel-head button.pel-x,
+.lay-panel-head button.lay-x { font-size: 2rem; padding: 10px 24px; }
+
+/* Tombol Batal dan Simpan di dasar panel */
+.pel .pel-panel-actions button,
+.lay-panel-actions button { font-size: 1.8rem; padding: 20px 46px; }

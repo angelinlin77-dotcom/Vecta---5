@@ -70,6 +70,8 @@ function DashboardCards({ version }: { version: number }) {
     ? semua.reduce((sum, p) => sum + (p.jumlah_dibayar ?? 0), 0)
     : data.total_pendapatan ?? 0;
   return (
+    <>
+    <h2 className="dash-title">Dashboard</h2>
     <section className="cards">
       <div className="card"><span>Total pesanan</span><b>{semua ? semua.length : data.total_pesanan}</b></div>
       <div className="card"><span>Total transaksi</span><b>{rupiah(totalTransaksi)}</b></div>
@@ -78,6 +80,7 @@ function DashboardCards({ version }: { version: number }) {
         <div className="card" key={s}><span>{s}</span><b>{data.per_status[s] ?? 0}</b></div>
       ))}
     </section>
+    </>
   );
 }
 
@@ -153,6 +156,7 @@ function PesananPage({ onChange }: { onChange: () => void }) {
       jumlah_dibayar: statusBaru === 'DP' ? totalDibayar : 0,
       bayar_sekarang: bayar,
     };
+    if (editId !== null && !(await konfirmasi('Simpan perubahan ini?', { ya: 'Ya, simpan', bahaya: false }))) return;
     try {
       if (editId === null) await api.post<Pesanan>('/pesanan', body);
       else await api.put<Pesanan>(`/pesanan/${editId}`, body);
@@ -170,7 +174,7 @@ function PesananPage({ onChange }: { onChange: () => void }) {
   }
 
   async function remove(p: Pesanan) {
-    if (!confirm(`Hapus pesanan ${p.kode}?`)) return;
+    if (!(await konfirmasi(`Hapus pesanan ${p.kode}?`))) return;
     try { await api.del(`/pesanan/${p.id}`); done(`Pesanan ${p.kode} dihapus`); }
     catch (x) { fail(x); }
   }
@@ -257,7 +261,11 @@ function PesananPage({ onChange }: { onChange: () => void }) {
 
         <div className="actions">
           <button type="submit">{editId === null ? 'Buat Pesanan' : 'Simpan Perubahan'}</button>
-          <button type="button" className="ghost" onClick={() => setForm({ ...form, bayar: String(sisaSekarang) })}>
+          <button type="button" className="ghost" onClick={async () => {
+            if (await konfirmasi(`Lunasi sisa tagihan ${rupiah(sisaSekarang)}?`, { ya: 'Ya, lunasi', bahaya: false })) {
+              setForm({ ...form, bayar: String(sisaSekarang) });
+            }
+          }}>
             Lunasi sisa
           </button>
           {editId !== null && <button type="button" className="ghost" onClick={reset}>Batal</button>}
@@ -461,6 +469,7 @@ function PelangganPage({ version, onChange }: { version: number; onChange: () =>
     setSubmitted(true);
     if (!form.nama.trim() || waErr || duplikat) return;
     const body = { nama: form.nama.trim(), telepon: form.telepon.trim(), alamat: form.alamat.trim() };
+    if (editId !== null && !(await konfirmasi('Simpan perubahan ini?', { ya: 'Ya, simpan', bahaya: false }))) return;
     try {
       if (editId === null) await api.post('/pelanggan', body);
       else await api.put(`/pelanggan/${editId}`, body);
@@ -476,7 +485,7 @@ function PelangganPage({ version, onChange }: { version: number; onChange: () =>
   }
 
   async function remove(r: PelangganRow) {
-    if (!confirm(`Hapus pelanggan ${r.nama}?`)) return;
+    if (!(await konfirmasi(`Hapus pelanggan ${r.nama}?`))) return;
     try {
       await api.del(`/pelanggan/${r.id}`);
       setMsg('Pelanggan dihapus');
@@ -786,6 +795,7 @@ function LayananPage({ version, onChange }: { version: number; onChange: () => v
       estimasi_hari: estimasiBaru,
       deskripsi: form.deskripsi.trim(),
     };
+    if (editId !== null && !(await konfirmasi('Simpan perubahan ini?', { ya: 'Ya, simpan', bahaya: false }))) return;
     try {
       if (editId === null) await api.post('/layanan', body);
       else await api.put(`/layanan/${editId}`, body);
@@ -801,7 +811,7 @@ function LayananPage({ version, onChange }: { version: number; onChange: () => v
   }
 
   async function remove(r: Layanan) {
-    if (!confirm(`Hapus layanan ${r.nama}?`)) return;
+    if (!(await konfirmasi(`Hapus layanan ${r.nama}?`))) return;
     try {
       await api.del(`/layanan/${r.id}`);
       setMsg('Layanan dihapus');
@@ -1005,10 +1015,52 @@ const BG_BUBBLES = Array.from({ length: 30 }, (_, i) => ({
   t: -((i * 7) % 30),               // delay negatif: langsung ramai saat dibuka
 }));
 
+const LOADER_BUBBLES = Array.from({ length: 16 }, (_, i) => ({
+  x: `${(i * 37) % 95 + 2}%`,
+  s: 40 + ((i * 23) % 90),
+  d: 2 + ((i * 3) % 7) / 10,
+  t: ((i * 2) % 5) / 5,
+}));
+
+// Pengganti confirm() bawaan browser (yang selalu menulis "localhost:5174 says")
+type Opsi = { ya?: string; bahaya?: boolean };
+let bukaKonfirmasi: (teks: string, opsi: Opsi) => Promise<boolean> = async () => false;
+const konfirmasi = (teks: string, opsi: Opsi = {}) => bukaKonfirmasi(teks, opsi);
+
+function KonfirmasiHost() {
+  const [tanya, setTanya] = useState<{ teks: string; opsi: Opsi; jawab: (ok: boolean) => void } | null>(null);
+  useEffect(() => {
+    bukaKonfirmasi = (teks, opsi) => new Promise((jawab) => setTanya({ teks, opsi, jawab }));
+  }, []);
+  if (!tanya) return null;
+  const tutup = (ok: boolean) => { tanya.jawab(ok); setTanya(null); };
+  return (
+    <div className="pel-modal-bg" onClick={() => tutup(false)}>
+      <div className="pel-modal" style={{ width: 'min(640px, 100%)', padding: '34px 38px' }} role="alertdialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+        <h3 style={{ margin: '0 0 12px', fontSize: '1.9rem' }}>Milky Wash</h3>
+        <p style={{ margin: '0 0 30px', fontSize: '1.3rem', fontWeight: 600 }}>{tanya.teks}</p>
+        <div className="actions" style={{ justifyContent: 'flex-end' }}>
+          <button className="ghost" style={{ fontSize: '1.2rem', padding: '12px 28px' }} onClick={() => tutup(false)}>Batal</button>
+          <button className={tanya.opsi.bahaya === false ? '' : 'danger'} style={{ fontSize: '1.2rem', padding: '12px 28px' }} onClick={() => tutup(true)}>{tanya.opsi.ya ?? 'Ya, hapus'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [tab, setTab] = useState<(typeof TABS)[number]>('Pesanan');
   const [version, setVersion] = useState(0);
   const refresh = () => setVersion((v) => v + 1);
+
+  // Efek loading saat pindah tab: layar muncul, tab diganti di tengah, lalu layar hilang
+  const [pindahTab, setPindahTab] = useState(false);
+  const gantiTab = (t: (typeof TABS)[number]) => {
+    if (t === tab || pindahTab) return;
+    setPindahTab(true);
+    setTimeout(() => setTab(t), 1000);
+    setTimeout(() => setPindahTab(false), 2000); // sama dengan durasi .page-loader di styles.css (2s)
+  };
 
   return (
     <>
@@ -1028,11 +1080,31 @@ export default function App() {
         ))}
       </div>
 
+      {pindahTab && (
+        <div className="page-loader" role="status" aria-live="polite">
+          {LOADER_BUBBLES.map((b, i) => (
+            <span
+              key={i}
+              className="lb"
+              style={{ left: b.x, width: b.s, height: b.s, animationDuration: `${b.d}s`, animationDelay: `${b.t}s` }}
+            />
+          ))}
+          <div className="loader-center">
+            <img className="loader-logo" src="/logo.png" alt="" />
+            <p className="loader-text">
+              Memuat<span>.</span><span>.</span><span>.</span>
+            </p>
+          </div>
+        </div>
+      )}
+
+      <KonfirmasiHost />
+
       <header className="topbar">
         <h1 className="brand-title">Milky Wash</h1>
         <nav>
           {TABS.map((t) => (
-            <button key={t} className={t === tab ? 'tab active' : 'tab'} onClick={() => setTab(t)}>{t}</button>
+            <button key={t} className={t === tab ? 'tab active' : 'tab'} onClick={() => gantiTab(t)}>{t}</button>
           ))}
         </nav>
       </header>
