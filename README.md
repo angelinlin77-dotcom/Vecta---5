@@ -48,7 +48,7 @@ Vecta---5/
 
 ## Menjalankan
 
-Jalankan dua terminal secara bersamaan.
+Jalankan dua terminal secara bersamaan. Jalankan Terminal 1 (API) lebih dulu, baru Terminal 2 (Web).
 
 ```bash
 # Terminal 1: API
@@ -164,5 +164,41 @@ Content-Type: application/json
   "status_bayar": "DP",
   "jumlah_dibayar": 10000,
   "bayar_sekarang": 10000
+}
+```
+
+### Contoh: mengubah status pesanan
+
+```http
+PATCH /api/pesanan/1/status
+Content-Type: application/json
+
+{ "status": "Dicuci" }
+```
+
+### Contoh: menambah pelanggan
+
+```http
+POST /api/pelanggan
+Content-Type: application/json
+
+{
+  "nama": "Dina Lestari",
+  "telepon": "081234567890",
+  "alamat": "Jl. Gatot Subroto No. 12, Medan"
+}
+```
+
+### Contoh: menambah layanan
+
+```http
+POST /api/layanan
+Content-Type: application/json
+
+{
+  "nama": "Cuci Setrika",
+  "harga_per_kg": 8000,
+  "estimasi_hari": 3,
+  "deskripsi": "Cuci, keringkan, dan setrika rapi"
 }
 ```
